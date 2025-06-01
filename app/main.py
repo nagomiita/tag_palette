@@ -7,7 +7,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 # === 設定 ===
 FONT_TYPE = "meiryo"
 FONT_SIZE = 13
-THUMBNAIL_SIZE = (150, 150)
+THUMBNAIL_SIZE = (150, 200)
 IMAGE_DIR = Path("images")
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 MARGIN = 10
@@ -144,7 +144,7 @@ class App(BaseWindow):
         self.image_frames.clear()
 
         gallery_width = self.winfo_width()
-        thumb_w = self.thumbnail_size[0] + 40
+        thumb_w = self.thumbnail_size[0] + 50
         columns = max(1, gallery_width // thumb_w)
         self.current_columns = columns
 
@@ -174,7 +174,7 @@ class App(BaseWindow):
                 row += 1
 
     def __on_resize(self, _):
-        new_columns = max(1, self.winfo_width() // (self.thumbnail_size[0] + 40))
+        new_columns = max(1, self.winfo_width() // (self.thumbnail_size[0] + 50))
         if new_columns != self.current_columns:
             self.__load_images()
 
