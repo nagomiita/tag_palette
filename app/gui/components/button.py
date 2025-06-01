@@ -15,9 +15,9 @@ def _create_icon_button(
         fg_color=fg_color,
         hover_color=hover_color,
         text_color="white",
-        width=30,
-        height=30,
-        font=("Arial", 24),
+        width=20,
+        height=20,
+        font=("Arial", 20),
         command=command,
     )
 
