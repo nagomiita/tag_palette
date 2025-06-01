@@ -1,9 +1,44 @@
 import hashlib
+from functools import lru_cache
 from pathlib import Path
 
 import customtkinter as ctk
-from config import IMAGE_DIR, SUPPORTED_FORMATS, THUMB_DIR, THUMBNAIL_SIZE
+from config import (
+    ENABLE_IMAGE_CACHE,
+    IMAGE_DIR,
+    SUPPORTED_FORMATS,
+    THUMB_DIR,
+    THUMBNAIL_SIZE,
+)
 from PIL import Image, ImageEnhance, ImageFilter
+
+
+@lru_cache(maxsize=512)
+def _cached_loader(
+    image_path: str, size: tuple, shadow_offset: int
+) -> tuple[ctk.CTkImage, ctk.CTkImage]:
+    """
+    サムネイル画像とホバー画像をキャッシュして返す。
+
+    Args:
+        image_path (str): 画像ファイルのパス
+        size (tuple[int, int]): サムネイルサイズ
+        shadow_offset (int): 影のずれピクセル
+
+    Returns:
+        tuple[CTkImage, CTkImage]: 通常画像とホバー用画像
+    """
+    return _generate_thumbnail_images(image_path, size, shadow_offset)
+
+
+def load_thumbnail_image(
+    image_path: str, size: tuple, shadow_offset: int
+) -> tuple[ctk.CTkImage, ctk.CTkImage]:
+    if ENABLE_IMAGE_CACHE:
+        return _cached_loader(image_path, size, shadow_offset)
+    else:
+        _cached_loader.cache_clear()
+        return _generate_thumbnail_images(image_path, size, shadow_offset)
 
 
 def _hash_path(path: Path) -> str:
@@ -29,7 +64,9 @@ def resize_images(registered: set[str]) -> list[tuple[str, str]]:
     return images
 
 
-def generate_thumbnail_images(image_path, size, shadow_offset=4):
+def _generate_thumbnail_images(
+    image_path, size, shadow_offset=4
+) -> tuple[ctk.CTkImage, ctk.CTkImage]:
     """
     サムネイル画像とホバー用画像を生成するユーティリティ関数。
 

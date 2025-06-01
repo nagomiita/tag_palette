@@ -70,16 +70,25 @@ class App(BaseWindow):
     def _load_images(self):
         self._clear_gallery()
         self.current_columns = self._calculate_columns()
-        entries = self.viewmodel.get_entries()
+        self.entries = self.viewmodel.get_entries()
+        self.row = self.col = 0
+        self.batch_size = 10
+        self.index = 0
+        self._draw_batch()
 
-        row = col = 0
-        for entry in entries:
+    def _draw_batch(self):
+        end = min(self.index + self.batch_size, len(self.entries))
+        for i in range(self.index, end):
+            entry = self.entries[i]
             frame = self._create_thumbnail_frame(entry)
-            frame.grid(row=row, column=col, padx=4, pady=4)
+            frame.grid(row=self.row, column=self.col, padx=4, pady=4)
             self.image_frames.append(frame)
-            col = (col + 1) % self.current_columns
-            if col == 0:
-                row += 1
+            self.col = (self.col + 1) % self.current_columns
+            if self.col == 0:
+                self.row += 1
+        self.index = end
+        if self.index < len(self.entries):
+            self.after(10, self._draw_batch)
 
     def _create_thumbnail_frame(self, entry: ImageEntry):
         frame = ctk.CTkFrame(self.gallery_frame)

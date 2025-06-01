@@ -9,3 +9,4 @@ DB_PATH = "data.db"
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 MARGIN = 10
 SHADOW_OFFSET = 4
+ENABLE_IMAGE_CACHE = True
