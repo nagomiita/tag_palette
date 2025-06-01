@@ -4,17 +4,18 @@ from pathlib import Path
 import customtkinter as ctk
 from PIL import Image, ImageEnhance, ImageFilter
 
-# --- 設定 ---
+# === 設定 ===
 FONT_TYPE = "meiryo"
+FONT_SIZE = 13
 THUMBNAIL_SIZE = (150, 150)
 IMAGE_DIR = Path("images")
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
+MARGIN = 10
+SHADOW_OFFSET = 4
 
 
-# --- ヘルパー関数 ---
-
-
-def maximize_window(window: ctk.CTk | ctk.CTkToplevel, margin: int = 10) -> None:
+# === ヘルパー ===
+def maximize_window(window: ctk.CTk | ctk.CTkToplevel, margin: int = MARGIN) -> None:
     if platform.system() == "Windows":
         window.state("zoomed")
     else:
@@ -23,40 +24,45 @@ def maximize_window(window: ctk.CTk | ctk.CTkToplevel, margin: int = 10) -> None
         window.geometry(f"{width}x{height}+{margin}+{margin}")
 
 
-# --- 共通ウィンドウクラス ---
-class BaseWindow(ctk.CTk):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+# === 共通処理 ===
+class WindowBaseMixin:
+    def apply_common_style(self):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
-        self.fonts = (FONT_TYPE, 13)
+        self.fonts = (FONT_TYPE, FONT_SIZE)
         self.configure(fg_color="#222222")
         self.after(0, lambda: maximize_window(self))
 
 
-class BaseToplevel(ctk.CTkToplevel):
+# === ウィンドウ基底クラス ===
+class BaseWindow(ctk.CTk, WindowBaseMixin):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.apply_common_style()
+
+
+class BaseToplevel(ctk.CTkToplevel, WindowBaseMixin):
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.attributes("-topmost", True)
-        self.configure(fg_color="#222222")
-        self.fonts = (FONT_TYPE, 13)
-        self.after(0, lambda: maximize_window(self))
+        self.apply_common_style()
 
 
-# --- サムネイル ---
+# === サムネイルラベル ===
 class ImageThumbnail(ctk.CTkLabel):
-    def __init__(self, parent, image_path, size=(150, 150), click_callback=None):
+    def __init__(
+        self, parent, image_path: Path, size=THUMBNAIL_SIZE, click_callback=None
+    ):
         super().__init__(parent, text="", fg_color="#333333", corner_radius=10)
-
         self.image_path = image_path
         self.size = size
         self.click_callback = click_callback
         self._hover_photo = None
 
-        self._load_image()
-        self._bind_events()
+        self.__load_image()
+        self.__bind_events()
 
-    def _load_image(self):
+    def __load_image(self):
         try:
             img = Image.open(self.image_path)
             img.thumbnail(self.size, Image.Resampling.LANCZOS)
@@ -69,7 +75,9 @@ class ImageThumbnail(ctk.CTkLabel):
 
             shadow = canvas.copy().filter(ImageFilter.GaussianBlur(2))
             final_img = Image.new(
-                "RGBA", (self.size[0] + 4, self.size[1] + 4), (0, 0, 0, 0)
+                "RGBA",
+                (self.size[0] + SHADOW_OFFSET, self.size[1] + SHADOW_OFFSET),
+                (0, 0, 0, 0),
             )
             final_img.paste(shadow, (2, 2), shadow)
             final_img.paste(canvas, (0, 0), canvas)
@@ -86,40 +94,38 @@ class ImageThumbnail(ctk.CTkLabel):
             self._photo = ctk.CTkImage(light_image=placeholder, size=self.size)
             self.configure(image=self._photo)
 
-    def _bind_events(self):
+    def __bind_events(self):
         if self.click_callback:
             self.bind("<Button-1>", lambda e: self.click_callback(self.image_path))
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
+        self.bind("<Enter>", self.__on_enter)
+        self.bind("<Leave>", self.__on_leave)
 
-    def _on_enter(self, event):
+    def __on_enter(self, _):
         if self._hover_photo:
             self.configure(image=self._hover_photo)
 
-    def _on_leave(self, event):
+    def __on_leave(self, _):
         self.configure(image=self._photo)
 
 
-# --- メインアプリ ---
+# === メインアプリ ===
 class App(BaseWindow):
     def __init__(self):
         super().__init__()
         self.title("フォトギャラリー")
-
         self.thumbnail_size = THUMBNAIL_SIZE
         self.image_frames = []
         self.current_columns = 5
 
-        self._setup_gallery_canvas()
-        self.bind("<Configure>", self.on_resize)
+        self.__setup_gallery_canvas()
+        self.bind("<Configure>", self.__on_resize)
 
-    def _setup_gallery_canvas(self):
+    def __setup_gallery_canvas(self):
         self.canvas = ctk.CTkCanvas(self, background="#222222")
         self.scrollbar = ctk.CTkScrollbar(
             self, orientation="vertical", command=self.canvas.yview
         )
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
@@ -130,9 +136,9 @@ class App(BaseWindow):
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
 
-        self.load_images()
+        self.__load_images()
 
-    def load_images(self):
+    def __load_images(self):
         for frame in self.image_frames:
             frame.destroy()
         self.image_frames.clear()
@@ -155,7 +161,7 @@ class App(BaseWindow):
                 frame,
                 image_path=img_path,
                 size=self.thumbnail_size,
-                click_callback=self.show_full_image,
+                click_callback=self.__show_full_image,
             )
             thumb.pack()
 
@@ -167,12 +173,12 @@ class App(BaseWindow):
                 col = 0
                 row += 1
 
-    def on_resize(self, event):
+    def __on_resize(self, _):
         new_columns = max(1, self.winfo_width() // (self.thumbnail_size[0] + 40))
         if new_columns != self.current_columns:
-            self.load_images()
+            self.__load_images()
 
-    def show_full_image(self, image_path):
+    def __show_full_image(self, image_path: Path):
         try:
             top = BaseToplevel(self)
             top.title(image_path.name)
@@ -195,7 +201,7 @@ class App(BaseWindow):
             print(f"[Error] Failed to display image: {e}")
 
 
-# --- 実行 ---
+# === 実行 ===
 if __name__ == "__main__":
     app = App()
     app.mainloop()
