@@ -111,6 +111,12 @@ class App(BaseWindow):
 
         self.page_entry.delete(0, "end")
         self.page_entry.insert(0, str(self.current_page + 1))
+        self.prev_button.configure(
+            state="disabled" if self.current_page == 0 else "normal"
+        )
+        self.next_button.configure(
+            state="disabled" if self.current_page >= self.total_pages - 1 else "normal"
+        )
         self.total_label.configure(text=f"/ {self.total_pages}")
 
     def _clear_gallery(self):
