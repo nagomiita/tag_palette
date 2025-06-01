@@ -20,7 +20,7 @@ class App(BaseWindow):
         self.title("Tag Palette")
         self.thumbnail_size = THUMBNAIL_SIZE
         self.image_frames: list[ctk.CTkFrame] = []
-        self.current_columns = 5
+        self.current_columns: int = 5
 
         self.viewmodel = GalleryViewModel()
 
@@ -129,12 +129,36 @@ class App(BaseWindow):
         label = load_full_image(container, entry.image_path)
         label.pack()
 
-        create_favorite_button(container, image_id).place(
-            relx=1.0, rely=1.0, anchor="se", x=-8, y=-8
+        is_fav = self.viewmodel.get_favorite_state(image_id)
+
+        # お気に入りボタン
+        self.favorite_button = create_favorite_button(
+            container,
+            is_fav,
+            command=lambda: self._toggle_favorite(image_id),
         )
-        create_delete_button(container, image_id, refresh_callback=top.destroy).place(
-            relx=0.0, rely=1.0, anchor="sw", x=4, y=-4
-        )
+        self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
+
+        # 削除ボタン
+        create_delete_button(
+            container,
+            command=lambda: self._on_delete(image_id, top),
+        ).place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
+
+    def _on_delete(self, image_id: int, toplevel: ctk.CTkToplevel):
+        success = self.viewmodel.delete_image(image_id)
+        if success:
+            toplevel.destroy()
+            self._load_images()
+
+    def _toggle_favorite(self, image_id: int):
+        new_state = self.viewmodel.toggle_favorite(image_id)
+        if new_state is not None:
+            self.favorite_button.configure(
+                text="♥" if new_state else "♡",
+                fg_color="#ff9eb5" if new_state else "#1f6aa5",
+                hover_color="#c268a7" if new_state else "#124c86",
+            )
 
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")

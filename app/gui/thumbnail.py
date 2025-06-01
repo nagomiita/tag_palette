@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from config import SHADOW_OFFSET
 from gui.components.button import create_delete_button, create_favorite_button
+from gui.viewmodel import ImageThumbnailViewModel
 from utils.image import generate_thumbnail_images
 
 
@@ -14,6 +15,8 @@ class ImageThumbnail(ctk.CTkFrame):
         self._photo = None
         self._hover_photo = None
 
+        self.viewmodel = ImageThumbnailViewModel(self.image_id, self.image_path)
+
         self._setup_widgets()
         self._setup_buttons()
         self._bind_events()
@@ -24,12 +27,13 @@ class ImageThumbnail(ctk.CTkFrame):
         self._load_image()
 
     def _setup_buttons(self):
-        create_favorite_button(self, self.image_id).place(
-            relx=1.0, rely=1.0, anchor="se", x=-4, y=-4
-        )
-        create_delete_button(
-            self, self.image_id, refresh_callback=self._delete_thumbnail
-        ).place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
+        is_fav = self.viewmodel.get_favorite_state()
+        self.favorite_button = create_favorite_button(
+            self, is_fav, self._toggle_favorite
+        ).place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+
+        delete_button = create_delete_button(self, self._on_delete)
+        delete_button.place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
 
     def _bind_events(self):
         if self.click_callback:
@@ -54,5 +58,16 @@ class ImageThumbnail(ctk.CTkFrame):
         if self._photo:
             self.label.configure(image=self._photo)
 
-    def _delete_thumbnail(self):
-        self.destroy()
+    def _on_delete(self):
+        success = self.viewmodel.delete_image()
+        if success:
+            self.destroy()
+
+    def _toggle_favorite(self):
+        new_state = self.viewmodel.toggle_favorite()
+        if new_state is not None:
+            self.favorite_button.configure(
+                text="♥" if new_state else "♡",
+                fg_color="#ff9eb5" if new_state else "#1f6aa5",
+                hover_color="#c268a7" if new_state else "#124c86",
+            )
