@@ -14,11 +14,11 @@ class Original(BaseToplevel):
         super().__init__(parent)
         self.title(Path(entry.image_path).name)
 
-        # 横並びのメインフレーム
+        # メイン横並び
         container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(expand=True, fill="both", padx=0, pady=0)
+        container.pack(fill="both", expand=True)
 
-        # ===== 左側: 画像エリア =====
+        # ---------------- 左: 画像 ----------------
         left_frame = ctk.CTkFrame(container, fg_color="transparent")
         left_frame.pack(side="left", fill="y", padx=10, pady=10)
 
@@ -28,7 +28,6 @@ class Original(BaseToplevel):
         label = load_full_image(image_frame, entry.image_path)
         label.pack(anchor="w")
 
-        # ボタンを画像の下部に重ねて表示
         fav_button = create_favorite_button(
             image_frame,
             is_fav,
@@ -41,18 +40,46 @@ class Original(BaseToplevel):
             command=lambda: delete_cb(entry.id, self),
         ).place(relx=0.0, rely=1.0, anchor="sw", x=12, y=-12)
 
-        # ===== 右側: タグ + ギャラリーエリア =====
-        right_frame = ctk.CTkFrame(container, fg_color="#2a2a2a")
-        right_frame.pack(side="left", expand=True, fill="both", padx=(10, 10), pady=10)
+        # ---------------- 右: タグ + ギャラリー ----------------
+        right_frame = ctk.CTkFrame(container)
+        right_frame.pack(side="left", fill="both", expand=True, padx=(10, 10), pady=10)
 
-        # タグ表示（上部）
         tag_label = ctk.CTkLabel(right_frame, text=" ".join(tags), wraplength=600)
         tag_label.pack(anchor="w", padx=10, pady=(0, 10))
 
-        # ギャラリー領域（下部）
-        gallery_frame = ctk.CTkFrame(right_frame, fg_color="#3a3a3a")
-        gallery_frame.pack(expand=True, fill="both", padx=10)
+        # ギャラリー用Canvas + Scrollbar
+        canvas_container = ctk.CTkFrame(right_frame)
+        canvas_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        for i in range(10):
-            thumb = ctk.CTkLabel(gallery_frame, text=f"Thumb {i + 1}")
-            thumb.pack(pady=5, padx=10, anchor="w")
+        canvas = ctk.CTkCanvas(canvas_container, highlightthickness=0)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ctk.CTkScrollbar(
+            canvas_container, orientation="vertical", command=canvas.yview
+        )
+        scrollbar.pack(side="right", fill="y")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # 内部スクロール可能なフレーム
+        scrollable_frame = ctk.CTkFrame(canvas)
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        # スクロール領域の更新
+        def on_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfig(window_id, width=canvas.winfo_width())
+
+        scrollable_frame.bind("<Configure>", on_configure)
+        canvas.bind(
+            "<Configure>", lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
+
+        # マウスホイール対応
+        canvas.bind_all(
+            "<MouseWheel>", lambda e: canvas.yview_scroll(-int(e.delta / 120), "units")
+        )
+
+        # ダミーのサムネイルを追加
+        for i in range(30):
+            thumb = ctk.CTkLabel(scrollable_frame, text=f"Thumb {i + 1}", anchor="w")
+            thumb.pack(padx=10, pady=5, anchor="w")
