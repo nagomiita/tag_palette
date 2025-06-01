@@ -1,39 +1,79 @@
-from db.init import engine
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Generator
+
+from db.engine import engine
 from db.models import ImageEntry
 from sqlalchemy.orm import Session
 
+# ---------------------------- Session Management ----------------------------
+
+
+@contextmanager
+def get_session() -> Generator[Session, None, None]:
+    session = Session(engine)
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+# ---------------------------- Query: Fetch Entries ----------------------------
+
 
 def get_all_image_entries() -> list[ImageEntry]:
-    with Session(engine) as session:
+    with get_session() as session:
         return session.query(ImageEntry).order_by(ImageEntry.id).all()
 
 
-def get_image_entry_by_id(image_id: int) -> ImageEntry | None:
-    with Session(engine) as session:
-        return session.query(ImageEntry).filter(ImageEntry.id == image_id).first()
-
-
-def toggle_favorite_flag(image_id: int) -> bool | None:
-    with Session(engine) as session:
-        entry = session.query(ImageEntry).filter(ImageEntry.id == image_id).first()
-        if entry:
-            entry.is_favorite = not entry.is_favorite
-            session.commit()
-            return entry.is_favorite
-    return None
-
-
-def get_favorite_flag(image_id: int) -> bool:
-    with Session(engine) as session:
-        entry = session.query(ImageEntry).filter(ImageEntry.id == image_id).first()
-        return entry.is_favorite if entry else False
-
-
 def get_favorite_image_entries() -> list[ImageEntry]:
-    with Session(engine) as session:
+    with get_session() as session:
         return (
             session.query(ImageEntry)
             .filter_by(is_favorite=True)
             .order_by(ImageEntry.id)
             .all()
         )
+
+
+def get_image_entry_by_id(image_id: int) -> ImageEntry | None:
+    with get_session() as session:
+        return session.query(ImageEntry).filter_by(id=image_id).first()
+
+
+# ---------------------------- Query: Favorite Flags ----------------------------
+
+
+def get_favorite_flag(image_id: int) -> bool:
+    with get_session() as session:
+        entry = session.query(ImageEntry).filter_by(id=image_id).first()
+        return entry.is_favorite if entry else False
+
+
+def toggle_favorite_flag(image_id: int) -> bool | None:
+    with get_session() as session:
+        entry = session.query(ImageEntry).filter_by(id=image_id).first()
+        if entry:
+            entry.is_favorite = not entry.is_favorite
+            try:
+                session.commit()
+                return entry.is_favorite
+            except Exception:
+                session.rollback()
+    return None
+
+
+# ---------------------------- Query: Image Registration ----------------------------
+
+
+def get_registered_image_paths() -> set[str]:
+    with get_session() as session:
+        return {r.image_path for r in session.query(ImageEntry.image_path).all()}
+
+
+def add_image_entry(image_path: Path, thumbnail_path: Path) -> None:
+    with get_session() as session:
+        session.add(
+            ImageEntry(image_path=str(image_path), thumbnail_path=str(thumbnail_path))
+        )
+        session.commit()

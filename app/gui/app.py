@@ -59,7 +59,7 @@ class App(BaseWindow):
             f.destroy()
         self.image_frames.clear()
         w = self.winfo_width()
-        columns = max(1, w // (self.thumbnail_size[0] + 50))
+        columns = max(1, w // (self.thumbnail_size[0] + 20))
         self.current_columns = columns
         row = col = 0
 
@@ -71,7 +71,7 @@ class App(BaseWindow):
 
         for e in entries:
             f = ctk.CTkFrame(self.gallery_frame)
-            f.grid(row=row, column=col, padx=10, pady=10)
+            f.grid(row=row, column=col, padx=4, pady=4)
             self.image_frames.append(f)
             thumb = ImageThumbnail(
                 f,
@@ -95,7 +95,7 @@ class App(BaseWindow):
         self._load_images()
 
     def _on_resize(self, _):
-        new_cols = max(1, self.winfo_width() // (self.thumbnail_size[0] + 50))
+        new_cols = max(1, self.winfo_width() // (self.thumbnail_size[0] + 20))
         if new_cols != self.current_columns:
             self._load_images()
 
@@ -105,7 +105,7 @@ class App(BaseWindow):
             return
         top = BaseToplevel(self)
         top.title(Path(entry.image_path).name)
-        label = load_full_image(top, entry.image_path)  # 切り出した関数を使用
+        label = load_full_image(top, entry.image_path)
         label.pack(padx=20, pady=20, expand=True)
 
     def _on_mousewheel(self, event):
