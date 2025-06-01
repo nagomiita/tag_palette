@@ -11,7 +11,7 @@ from PIL import Image
 class App(BaseWindow):
     def __init__(self):
         super().__init__()
-        self.title("フォトギャラリー")
+        self.title("Tag Palette")
         self.thumbnail_size = THUMBNAIL_SIZE
         self.image_frames = []
         self.current_columns = 5
