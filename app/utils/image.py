@@ -7,11 +7,12 @@ from PIL import Image, ImageEnhance, ImageFilter
 
 
 def _hash_path(path: Path) -> str:
-    return hashlib.md5(str(path).encode("utf-8")).hexdigest()
+    return hashlib.md5(path.as_posix().encode("utf-8")).hexdigest()
 
 
 def resize_images(registered: set[str]) -> list[tuple[str, str]]:
     images: list[tuple[str, str]] = []
+    THUMB_DIR.mkdir(exist_ok=True)
     for img_path in IMAGE_DIR.rglob("*"):
         if (
             img_path.suffix.lower() not in SUPPORTED_FORMATS
