@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from config import SHADOW_OFFSET
-from db.query import get_favorite_flag, toggle_favorite_flag
+from db.query import get_favorite_flag
+from gui.components.favorite_button import create_favorite_button
 from utils.image import generate_thumbnail_images
 
 
@@ -19,15 +20,7 @@ class ImageThumbnail(ctk.CTkFrame):
         self._bind_events()
 
         self.is_fav = get_favorite_flag(self.image_id)
-        self.favorite_button = ctk.CTkButton(
-            self,
-            text="♥" if self.is_fav else "♡",
-            fg_color="#ff9eb5" if self.is_fav else "#1f6aa5",
-            width=30,
-            height=30,
-            font=("Arial", 24),
-            command=self.toggle_favorite,
-        )
+        self.favorite_button = create_favorite_button(self, self.image_id)
         self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
 
     def _load_image(self):
@@ -50,12 +43,3 @@ class ImageThumbnail(ctk.CTkFrame):
 
     def _on_leave(self, _):
         self.label.configure(image=self._photo)
-
-    def toggle_favorite(self):
-        is_fav = toggle_favorite_flag(self.image_id)
-        if is_fav is not None:
-            self.is_fav = is_fav
-            self.favorite_button.configure(
-                text="♥" if self.is_fav else "♡",
-                fg_color="#ff9eb5" if self.is_fav else "#1f6aa5",
-            )

@@ -8,6 +8,7 @@ from db.query import (
     get_image_entry_by_id,
 )
 from gui.base import BaseToplevel, BaseWindow
+from gui.components.favorite_button import create_favorite_button
 from gui.thumbnail import ImageThumbnail
 from utils.image import load_full_image
 
@@ -103,10 +104,21 @@ class App(BaseWindow):
         entry = get_image_entry_by_id(image_id)
         if not entry:
             return
+
         top = BaseToplevel(self)
         top.title(Path(entry.image_path).name)
-        label = load_full_image(top, entry.image_path)
-        label.pack(padx=20, pady=20, expand=True)
+
+        # コンテナフレーム（画像とボタンを重ねる用）
+        container = ctk.CTkFrame(top, fg_color="transparent")
+        container.pack(padx=20, pady=20, expand=True)
+
+        # 画像ラベル
+        label = load_full_image(container, entry.image_path)
+        label.pack()
+
+        # お気に入りボタン（画像右下に配置）
+        fav_button = create_favorite_button(container, image_id)
+        fav_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
 
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
