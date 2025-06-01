@@ -128,6 +128,13 @@ class App(BaseWindow):
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+        self.canvas.bind_all("<MouseWheel>", self.__on_mousewheel)  # Windows/macOS
+        self.canvas.bind_all(
+            "<Button-4>", self.__on_mousewheel_linux
+        )  # Linux 上スクロール
+        self.canvas.bind_all(
+            "<Button-5>", self.__on_mousewheel_linux
+        )  # Linux 下スクロール
 
         self.gallery_frame = ctk.CTkFrame(self.canvas, fg_color="#222222")
         self.canvas.create_window((0, 0), window=self.gallery_frame, anchor="nw")
@@ -199,6 +206,15 @@ class App(BaseWindow):
 
         except Exception as e:
             print(f"[Error] Failed to display image: {e}")
+
+    def __on_mousewheel(self, event):
+        # Windows/macOS
+        self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
+
+    def __on_mousewheel_linux(self, event):
+        # Linux専用（Button-4：上, Button-5：下）
+        direction = -1 if event.num == 4 else 1
+        self.canvas.yview_scroll(direction, "units")
 
 
 # === 実行 ===
