@@ -65,7 +65,7 @@ class App(BaseWindow):
         self.next_button.pack(side="left")
 
     def _setup_scrollable_canvas(self):
-        self.canvas = ctk.CTkCanvas(self, background="#222222")
+        self.canvas = ctk.CTkCanvas(self, background="#222222", highlightthickness=0)
         self.scrollbar = ctk.CTkScrollbar(
             self, orientation="vertical", command=self.canvas.yview
         )
@@ -77,7 +77,6 @@ class App(BaseWindow):
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
         self.canvas.bind_all("<Button-4>", self._on_mousewheel_linux)
         self.canvas.bind_all("<Button-5>", self._on_mousewheel_linux)
-
         self.gallery_frame = ctk.CTkFrame(self.canvas, fg_color="#222222")
         self.canvas.create_window((0, 0), window=self.gallery_frame, anchor="nw")
 
@@ -104,7 +103,7 @@ class App(BaseWindow):
         row = col = 0
         for entry in page_entries:
             frame = self._create_thumbnail_frame(entry)
-            frame.grid(row=row, column=col, padx=4, pady=4)
+            frame.grid(row=row, column=col, padx=8, pady=4)
             self.image_frames.append(frame)
             col = (col + 1) % self.current_columns
             if col == 0:
