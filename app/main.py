@@ -133,7 +133,12 @@ class App(customtkinter.CTk):
             frame.grid(row=row, column=col, padx=10, pady=10)
             self.image_frames.append(frame)
 
-            thumb = ImageThumbnail(frame, image_path=img_path, size=self.thumbnail_size)
+            thumb = ImageThumbnail(
+                frame,
+                image_path=img_path,
+                size=self.thumbnail_size,
+                click_callback=self.show_full_image,
+            )
             thumb.pack()
 
             caption = customtkinter.CTkLabel(frame, text=img_path.name, font=self.fonts)
@@ -150,6 +155,27 @@ class App(customtkinter.CTk):
         new_columns = max(1, gallery_width // (self.thumbnail_size[0] + 40))
         if new_columns != self.current_columns:
             self.load_images()
+
+    def show_full_image(self, image_path):
+        try:
+            top = customtkinter.CTkToplevel(self)
+            top.title(image_path.name)
+            top.geometry("800x600")
+            top.attributes("-topmost", True)
+
+            img = Image.open(image_path)
+            img.thumbnail((780, 580), Image.Resampling.LANCZOS)
+            img = img.convert("RGBA")
+
+            photo = customtkinter.CTkImage(
+                light_image=img, size=(img.width, img.height)
+            )
+            label = customtkinter.CTkLabel(top, image=photo, text="")
+            label.image = photo  # 保持しないとGCで消える
+            label.pack(padx=10, pady=10, expand=True)
+
+        except Exception as e:
+            print(f"Error displaying image: {e}")
 
 
 # --- 実行 ---
