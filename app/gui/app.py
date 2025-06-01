@@ -20,11 +20,12 @@ class App(BaseWindow):
         super().__init__()
         self.title("Tag Palette")
         self.thumbnail_size = THUMBNAIL_SIZE
-        self.image_frames: list[ctk.CTkFrame] = []
         self.current_columns: int = 5
         self.current_page = 0
         self.page_size = 36
         self.total_pages = 0
+        self.image_frames: list[ctk.CTkFrame] = []
+        self.entries: list[ImageEntry] = []
 
         self.viewmodel = GalleryViewModel()
 
@@ -33,20 +34,15 @@ class App(BaseWindow):
         self._setup_scrollable_canvas()
         self.bind("<Configure>", self._on_resize)
 
+        self._load_images()
+
+    # ---------------- UI SETUP ----------------
+
     def _setup_toggle_button(self):
         self.toggle_button = create_toggle_favorites_button(
             self, self.viewmodel.show_favorites_only, self._on_toggle_favorites
         )
         self.toggle_button.pack(pady=(10, 0), padx=10, anchor="nw")
-
-    def _on_toggle_favorites(self):
-        self.viewmodel.toggle_favorites()
-        self.toggle_button.configure(
-            text="すべて表示"
-            if self.viewmodel.show_favorites_only
-            else "お気に入りのみ表示"
-        )
-        self._load_images()
 
     def _setup_pagination_controls(self):
         self.pagination_frame = ctk.CTkFrame(self)
@@ -55,10 +51,10 @@ class App(BaseWindow):
         self.prev_button = ctk.CTkButton(
             self.pagination_frame, text="< Prev", command=self._prev_page
         )
+        self.page_label = ctk.CTkLabel(self.pagination_frame, text="")
         self.next_button = ctk.CTkButton(
             self.pagination_frame, text="Next >", command=self._next_page
         )
-        self.page_label = ctk.CTkLabel(self.pagination_frame, text="")
 
         self.prev_button.pack(side="left", padx=10)
         self.page_label.pack(side="left", padx=10)
@@ -86,34 +82,36 @@ class App(BaseWindow):
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
 
-        self._load_images()
+    # ---------------- IMAGE LOADING ----------------
 
     def _load_images(self):
-        self._clear_gallery()
-        self.current_columns = self._calculate_columns()
         self.entries = self.viewmodel.get_entries()
-        self.row = self.col = 0
-        self.batch_size = 10
-        self.index = 0
         self.total_pages = ceil(len(self.entries) / self.page_size)
         self.current_columns = self._calculate_columns()
         self._draw_page()
 
     def _draw_page(self):
         self._clear_gallery()
+
         start = self.current_page * self.page_size
         end = start + self.page_size
         page_entries = self.entries[start:end]
 
-        self.row = self.col = 0
+        row = col = 0
         for entry in page_entries:
             frame = self._create_thumbnail_frame(entry)
-            frame.grid(row=self.row, column=self.col, padx=4, pady=4)
+            frame.grid(row=row, column=col, padx=4, pady=4)
             self.image_frames.append(frame)
-            self.col = (self.col + 1) % self.current_columns
-            if self.col == 0:
-                self.row += 1
+            col = (col + 1) % self.current_columns
+            if col == 0:
+                row += 1
+
         self.page_label.configure(text=f"{self.current_page + 1} / {self.total_pages}")
+
+    def _clear_gallery(self):
+        for frame in self.image_frames:
+            frame.destroy()
+        self.image_frames.clear()
 
     def _create_thumbnail_frame(self, entry: ImageEntry):
         frame = ctk.CTkFrame(self.gallery_frame)
@@ -125,29 +123,17 @@ class App(BaseWindow):
             self._show_full_image,
         )
         thumb.pack()
+
         caption = ctk.CTkLabel(frame, text=Path(entry.image_path).name, font=self.fonts)
         caption.pack()
-        return frame
 
-    def _clear_gallery(self):
-        for frame in self.image_frames:
-            frame.destroy()
-        self.image_frames.clear()
+        return frame
 
     def _calculate_columns(self):
         width = self.winfo_width()
         return max(1, width // (self.thumbnail_size[0] + 20))
 
-    def _toggle_favorites(self):
-        self.show_favorites_only = not self.show_favorites_only
-        new_text = "すべて表示" if self.show_favorites_only else "お気に入りのみ表示"
-        self.toggle_button.configure(text=new_text)
-        self._load_images()
-
-    def _on_resize(self, _):
-        new_columns = self._calculate_columns()
-        if new_columns != self.current_columns:
-            self._load_images()
+    # ---------------- FULL VIEW ----------------
 
     def _show_full_image(self, image_id: int):
         entry = self.viewmodel.get_image_by_id(image_id)
@@ -164,34 +150,43 @@ class App(BaseWindow):
         label.pack()
 
         is_fav = self.viewmodel.get_favorite_state(image_id)
-
-        # お気に入りボタン
-        self.favorite_button = create_favorite_button(
+        fav_button = create_favorite_button(
             container,
             is_fav,
-            command=lambda: self._toggle_favorite(image_id),
+            command=lambda: self._toggle_favorite(image_id, fav_button),
         )
-        self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
+        fav_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
 
         create_delete_button(
             container,
             command=lambda: self._on_delete(image_id, top),
         ).place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
 
-    def _on_delete(self, image_id: int, toplevel: ctk.CTkToplevel):
-        success = self.viewmodel.delete_image(image_id)
-        if success:
-            toplevel.destroy()
-            self._load_images()
-
-    def _toggle_favorite(self, image_id: int):
+    def _toggle_favorite(self, image_id: int, button: ctk.CTkButton):
         new_state = self.viewmodel.toggle_favorite(image_id)
         if new_state is not None:
-            self.favorite_button.configure(
+            button.configure(
                 text="♥" if new_state else "♡",
                 fg_color="#ff9eb5" if new_state else "#1f6aa5",
                 hover_color="#c268a7" if new_state else "#124c86",
             )
+
+    def _on_delete(self, image_id: int, toplevel: ctk.CTkToplevel):
+        if self.viewmodel.delete_image(image_id):
+            toplevel.destroy()
+            self._load_images()
+
+    # ---------------- EVENTS ----------------
+
+    def _on_toggle_favorites(self):
+        self.viewmodel.toggle_favorites()
+        self.toggle_button.configure(
+            text="すべて表示"
+            if self.viewmodel.show_favorites_only
+            else "お気に入りのみ表示"
+        )
+        self.current_page = 0
+        self._load_images()
 
     def _prev_page(self):
         if self.current_page > 0:
@@ -202,6 +197,11 @@ class App(BaseWindow):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
             self._draw_page()
+
+    def _on_resize(self, _):
+        new_columns = self._calculate_columns()
+        if new_columns != self.current_columns:
+            self._load_images()
 
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
