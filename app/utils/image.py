@@ -1,7 +1,31 @@
+import hashlib
 from pathlib import Path
 
 import customtkinter as ctk
+from config import IMAGE_DIR, SUPPORTED_FORMATS, THUMB_DIR, THUMBNAIL_SIZE
 from PIL import Image, ImageEnhance, ImageFilter
+
+
+def _hash_path(path: Path) -> str:
+    return hashlib.md5(str(path).encode("utf-8")).hexdigest()
+
+
+def resize_images(registered: set[str]) -> list[tuple[str, str]]:
+    images: list[tuple[str, str]] = []
+    for img_path in IMAGE_DIR.rglob("*"):
+        if (
+            img_path.suffix.lower() not in SUPPORTED_FORMATS
+            or str(img_path) in registered
+        ):
+            continue
+        thumb_hash = _hash_path(img_path)
+        thumb_path = THUMB_DIR / f"{thumb_hash}_thumb.png"
+
+        img = Image.open(img_path)
+        img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+        img.save(thumb_path)
+        images.append((str(img_path), str(thumb_path)))
+    return images
 
 
 def generate_thumbnail_images(image_path, size, shadow_offset=4):
