@@ -51,14 +51,18 @@ class App(BaseWindow):
         self.prev_button = ctk.CTkButton(
             self.pagination_frame, text="< Prev", command=self._prev_page
         )
-        self.page_label = ctk.CTkLabel(self.pagination_frame, text="")
+        self.page_entry = ctk.CTkEntry(self.pagination_frame, width=40)
+        self.page_entry.bind("<Return>", self._go_to_page)
+
+        self.total_label = ctk.CTkLabel(self.pagination_frame, text="/ ?")
         self.next_button = ctk.CTkButton(
             self.pagination_frame, text="Next >", command=self._next_page
         )
 
         self.prev_button.pack(side="left", padx=10)
-        self.page_label.pack(side="left", padx=10)
-        self.next_button.pack(side="left", padx=10)
+        self.page_entry.pack(side="left")
+        self.total_label.pack(side="left", padx=(2, 10))
+        self.next_button.pack(side="left")
 
     def _setup_scrollable_canvas(self):
         self.canvas = ctk.CTkCanvas(self, background="#222222")
@@ -106,7 +110,9 @@ class App(BaseWindow):
             if col == 0:
                 row += 1
 
-        self.page_label.configure(text=f"{self.current_page + 1} / {self.total_pages}")
+        self.page_entry.delete(0, "end")
+        self.page_entry.insert(0, str(self.current_page + 1))
+        self.total_label.configure(text=f"/ {self.total_pages}")
 
     def _clear_gallery(self):
         for frame in self.image_frames:
@@ -197,6 +203,17 @@ class App(BaseWindow):
         if self.current_page < self.total_pages - 1:
             self.current_page += 1
             self._draw_page()
+
+    def _go_to_page(self, event=None):  # イベント付きに
+        try:
+            page = int(self.page_entry.get()) - 1
+            if 0 <= page < self.total_pages:
+                self.current_page = page
+                self._draw_page()
+            else:
+                print(f"⚠ 範囲外のページ番号: 1〜{self.total_pages}")
+        except ValueError:
+            print("⚠ 数字を入力してください")
 
     def _on_resize(self, _):
         new_columns = self._calculate_columns()
