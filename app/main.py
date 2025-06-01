@@ -84,53 +84,72 @@ class App(customtkinter.CTk):
         customtkinter.set_appearance_mode("dark")
         customtkinter.set_default_color_theme("blue")
 
+        self.thumbnail_size = THUMBNAIL_SIZE
+        self.image_frames = []
+        self.current_columns = 5
+
         self.setup_scrollable_gallery()
 
+        # リサイズイベント登録
+        self.bind("<Configure>", self.on_resize)
+
     def setup_scrollable_gallery(self):
-        canvas = customtkinter.CTkCanvas(self, background="#222222")
-        scrollbar = customtkinter.CTkScrollbar(
-            self, orientation="vertical", command=canvas.yview
+        self.canvas = customtkinter.CTkCanvas(self, background="#222222")
+        self.scrollbar = customtkinter.CTkScrollbar(
+            self, orientation="vertical", command=self.canvas.yview
         )
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
 
-        self.gallery_frame = customtkinter.CTkFrame(canvas, fg_color="#222222")
-        self.gallery_frame_id = canvas.create_window(
+        self.gallery_frame = customtkinter.CTkFrame(self.canvas, fg_color="#222222")
+        self.gallery_frame_id = self.canvas.create_window(
             (0, 0), window=self.gallery_frame, anchor="nw"
         )
         self.gallery_frame.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
 
         self.load_images()
 
     def load_images(self):
+        for frame in self.image_frames:
+            frame.destroy()
+        self.image_frames.clear()
+
+        gallery_width = self.winfo_width()
+        thumb_w = self.thumbnail_size[0] + 40
+        columns = max(1, gallery_width // thumb_w)
+        self.current_columns = columns
+
         row = col = 0
         for img_path in sorted(IMAGE_DIR.glob("*")):
             if img_path.suffix.lower() not in (".jpg", ".jpeg", ".png", ".bmp", ".gif"):
                 continue
 
-            try:
-                frame = customtkinter.CTkFrame(self.gallery_frame)
-                frame.grid(row=row, column=col, padx=10, pady=10)
+            frame = customtkinter.CTkFrame(self.gallery_frame)
+            frame.grid(row=row, column=col, padx=10, pady=10)
+            self.image_frames.append(frame)
 
-                thumb = ImageThumbnail(frame, image_path=img_path, size=THUMBNAIL_SIZE)
-                thumb.pack()
+            thumb = ImageThumbnail(frame, image_path=img_path, size=self.thumbnail_size)
+            thumb.pack()
 
-                caption = customtkinter.CTkLabel(
-                    frame, text=img_path.name, font=self.fonts
-                )
-                caption.pack()
+            caption = customtkinter.CTkLabel(frame, text=img_path.name, font=self.fonts)
+            caption.pack()
 
-                col += 1
-                if col >= MAX_COLUMNS:
-                    col = 0
-                    row += 1
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
 
-            except Exception as e:
-                print(f"Failed to display image {img_path}: {e}")
+    def on_resize(self, event):
+        # 以前の列数と異なるなら再描画
+        gallery_width = self.winfo_width()
+        new_columns = max(1, gallery_width // (self.thumbnail_size[0] + 40))
+        if new_columns != self.current_columns:
+            self.load_images()
 
 
 # --- 実行 ---
