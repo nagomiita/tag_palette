@@ -5,6 +5,7 @@ from typing import Generator
 from db.engine import engine
 from db.models import ImageEntry
 from sqlalchemy.orm import Session
+from utils.image import delete_image_files
 
 # ---------------------------- Session Management ----------------------------
 
@@ -77,3 +78,14 @@ def add_image_entry(image_path: Path, thumbnail_path: Path) -> None:
             ImageEntry(image_path=str(image_path), thumbnail_path=str(thumbnail_path))
         )
         session.commit()
+
+
+def delete_image_entry(image_id: int) -> bool:
+    with get_session() as session:
+        entry = session.query(ImageEntry).filter_by(id=image_id).first()
+        if entry:
+            delete_image_files(entry.image_path, entry.thumbnail_path)
+            session.delete(entry)
+            session.commit()
+            return True
+    return False

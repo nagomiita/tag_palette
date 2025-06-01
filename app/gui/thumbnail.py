@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from config import SHADOW_OFFSET
 from db.query import get_favorite_flag
-from gui.components.favorite_button import create_favorite_button
+from gui.components.button import create_delete_button, create_favorite_button
 from utils.image import generate_thumbnail_images
 
 
@@ -22,6 +22,10 @@ class ImageThumbnail(ctk.CTkFrame):
         self.is_fav = get_favorite_flag(self.image_id)
         self.favorite_button = create_favorite_button(self, self.image_id)
         self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+        self.delete_button = create_delete_button(
+            self, self.image_id, refresh_callback=self._delete_thumbnail
+        )
+        self.delete_button.place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
 
     def _load_image(self):
         try:
@@ -43,3 +47,6 @@ class ImageThumbnail(ctk.CTkFrame):
 
     def _on_leave(self, _):
         self.label.configure(image=self._photo)
+
+    def _delete_thumbnail(self):
+        self.destroy()

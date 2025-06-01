@@ -81,3 +81,14 @@ def load_full_image(parent: ctk.CTkBaseClass, image_path: str | Path) -> ctk.CTk
     label = ctk.CTkLabel(parent, image=photo, text="")
     label.image = photo  # ガーベジコレクション防止
     return label
+
+
+def delete_image_files(image_path: str | Path, thumbnail_path: str | Path) -> None:
+    """画像とサムネイルのファイルを削除する（存在確認付き）"""
+    for path in [image_path, thumbnail_path]:
+        try:
+            p = Path(path)
+            if p.exists():
+                p.unlink()
+        except Exception as e:
+            print(f"[Error] ファイル削除失敗: {path} -> {e}")

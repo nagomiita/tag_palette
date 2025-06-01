@@ -8,7 +8,7 @@ from db.query import (
     get_image_entry_by_id,
 )
 from gui.base import BaseToplevel, BaseWindow
-from gui.components.favorite_button import create_favorite_button
+from gui.components.button import create_delete_button, create_favorite_button
 from gui.thumbnail import ImageThumbnail
 from utils.image import load_full_image
 
@@ -119,6 +119,10 @@ class App(BaseWindow):
         # お気に入りボタン（画像右下に配置）
         fav_button = create_favorite_button(container, image_id)
         fav_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
+        del_button = create_delete_button(
+            container, image_id, refresh_callback=top.destroy
+        )
+        del_button.place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
 
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
