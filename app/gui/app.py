@@ -4,15 +4,15 @@ from pathlib import Path
 import customtkinter as ctk
 from config import THUMBNAIL_SIZE
 from db.models import ImageEntry
-from gui.base import BaseToplevel, BaseWindow
+from gui.base import BaseWindow
 from gui.components.button import (
-    create_delete_button,
-    create_favorite_button,
+    create_next_button,
+    create_prev_button,
     create_toggle_favorites_button,
 )
+from gui.original import Original
 from gui.thumbnail import ImageThumbnail
 from gui.viewmodel import GalleryViewModel
-from utils.image import load_full_image
 
 
 class App(BaseWindow):
@@ -48,15 +48,15 @@ class App(BaseWindow):
         self.pagination_frame = ctk.CTkFrame(self)
         self.pagination_frame.pack(side="bottom", pady=10)
 
-        self.prev_button = ctk.CTkButton(
-            self.pagination_frame, text="< Prev", command=self._prev_page
+        self.prev_button = create_prev_button(
+            self.pagination_frame, command=self._prev_page
         )
         self.page_entry = ctk.CTkEntry(self.pagination_frame, width=40)
         self.page_entry.bind("<Return>", self._go_to_page)
 
         self.total_label = ctk.CTkLabel(self.pagination_frame, text="/ ?")
-        self.next_button = ctk.CTkButton(
-            self.pagination_frame, text="Next >", command=self._next_page
+        self.next_button = create_next_button(
+            self.pagination_frame, command=self._next_page
         )
 
         self.prev_button.pack(side="left", padx=10)
@@ -151,27 +151,17 @@ class App(BaseWindow):
         if not entry:
             return
 
-        top = BaseToplevel(self)
-        top.title(Path(entry.image_path).name)
-
-        container = ctk.CTkFrame(top, fg_color="transparent")
-        container.pack(padx=20, pady=20, expand=True)
-
-        label = load_full_image(container, entry.image_path)
-        label.pack()
-
+        tags = self.viewmodel.get_tags_for_image(image_id)
         is_fav = self.viewmodel.get_favorite_state(image_id)
-        fav_button = create_favorite_button(
-            container,
-            is_fav,
-            command=lambda: self._toggle_favorite(image_id, fav_button),
-        )
-        fav_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
 
-        create_delete_button(
-            container,
-            command=lambda: self._on_delete(image_id, top),
-        ).place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
+        Original(
+            parent=self,
+            entry=entry,
+            tags=tags,
+            is_fav=is_fav,
+            toggle_fav_cb=self._toggle_favorite,
+            delete_cb=self._on_delete,
+        )
 
     def _toggle_favorite(self, image_id: int, button: ctk.CTkButton):
         new_state = self.viewmodel.toggle_favorite(image_id)

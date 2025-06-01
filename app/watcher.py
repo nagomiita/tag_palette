@@ -9,12 +9,7 @@ from watchdog.observers import Observer
 SCRIPT_NAME = "main.py"  # メインスクリプト（再実行対象）
 
 # 監視したいファイルやディレクトリのリスト
-WATCH_TARGETS = [
-    "main.py",
-    "gui/",
-    "db/",
-    "config.py",
-]
+WATCH_TARGETS = ["main.py", "gui/", "db/", "config.py", "utils/"]
 
 # 無視するパスや拡張子
 IGNORE_DIRS = ["__pycache__"]

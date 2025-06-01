@@ -113,6 +113,12 @@ def load_full_image(parent: ctk.CTkBaseClass, image_path: str | Path) -> ctk.CTk
     screen_h = parent.winfo_screenheight()
     img.thumbnail((screen_w - 40, screen_h - 80), Image.Resampling.LANCZOS)
     img = img.convert("RGBA")
+    max_width = screen_w - (screen_w / 3)
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize(
+            (int(img.width * ratio), int(img.height * ratio)), Image.Resampling.LANCZOS
+        )
 
     photo = ctk.CTkImage(light_image=img, size=(img.width, img.height))
     label = ctk.CTkLabel(parent, image=photo, text="")

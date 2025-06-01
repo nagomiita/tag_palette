@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from customtkinter import CTkFont
 
 
 def _create_icon_button(
@@ -43,14 +44,44 @@ def create_favorite_button(
     )
 
 
+def _create_button(
+    parent: ctk.CTkBaseClass,
+    text: str,
+    command: callable,
+) -> ctk.CTkButton:
+    return ctk.CTkButton(
+        parent,
+        text=text,
+        text_color="white",
+        font=CTkFont(weight="bold"),
+        command=command,
+    )
+
+
 def create_toggle_favorites_button(
     parent: ctk.CTkBaseClass, show_favorites_only: bool, command: callable
 ) -> ctk.CTkButton:
     text = "すべて表示" if show_favorites_only else "お気に入りのみ表示"
-    return ctk.CTkButton(
+    return _create_button(
         parent,
         text=text,
         command=command,
-        width=160,
-        height=32,
+    )
+
+
+def create_prev_button(parent: ctk.CTkBaseClass, command: callable) -> ctk.CTkButton:
+    text = "< Prev"
+    return _create_button(
+        parent,
+        text=text,
+        command=command,
+    )
+
+
+def create_next_button(parent: ctk.CTkBaseClass, command: callable) -> ctk.CTkButton:
+    text = "Next >"
+    return _create_button(
+        parent,
+        text=text,
+        command=command,
     )

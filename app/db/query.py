@@ -89,3 +89,12 @@ def delete_image_entry(image_id: int) -> bool:
             session.commit()
             return True
     return False
+
+
+# ---------------------------- Query: Tag ----------------------------
+def get_tags_for_image(image_id: int) -> list[str]:
+    with get_session() as session:
+        image = session.query(ImageEntry).filter_by(id=image_id).first()
+        if not image:
+            return []
+        return ["test"]  # [t.tag.tag for t in image.image_tags]

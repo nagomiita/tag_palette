@@ -5,6 +5,7 @@ from db.query import (
     get_favorite_flag,
     get_favorite_image_entries,
     get_image_entry_by_id,
+    get_tags_for_image,
     toggle_favorite_flag,
 )
 
@@ -40,6 +41,10 @@ class GalleryViewModel:
 
     def delete_image(self, image_id) -> bool:
         return delete_image_entry(image_id)
+
+    def get_tags_for_image(self, image_id):
+        """Fetch tags associated with a specific image."""
+        return get_tags_for_image(image_id)
 
 
 class ImageThumbnailViewModel:
