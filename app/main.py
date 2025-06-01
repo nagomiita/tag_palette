@@ -1,7 +1,10 @@
-from db.init import initialize_database
+from db.init import dispose_engine, initialize_database
 from gui.app import App
 
 if __name__ == "__main__":
     initialize_database()
     app = App()
-    app.mainloop()
+    try:
+        app.mainloop()
+    finally:
+        dispose_engine()

@@ -45,7 +45,7 @@ class App(BaseWindow):
         columns = max(1, w // (self.thumbnail_size[0] + 50))
         self.current_columns = columns
         row = col = 0
-        for e in get_all_image_entries():  # ← 差し替え
+        for e in get_all_image_entries():
             f = ctk.CTkFrame(self.gallery_frame)
             f.grid(row=row, column=col, padx=10, pady=10)
             self.image_frames.append(f)

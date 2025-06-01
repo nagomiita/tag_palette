@@ -16,6 +16,10 @@ WATCH_TARGETS = [
     "config.py",
 ]
 
+# 無視するパスや拡張子
+IGNORE_DIRS = ["__pycache__"]
+IGNORE_EXTS = [".pyc", ".pyo"]
+
 
 class ReloadHandler(FileSystemEventHandler):
     def __init__(self):
@@ -33,9 +37,15 @@ class ReloadHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         changed_path = os.path.abspath(event.src_path)
+
+        # ⛔ 無視対象かどうかをチェック
+        if any(ignored in changed_path for ignored in IGNORE_DIRS):
+            return
+        if os.path.splitext(changed_path)[1] in IGNORE_EXTS:
+            return
+
         for target in self.watch_targets:
             if os.path.isdir(target):
-                # 変更されたファイルがディレクトリ配下にあるか
                 if changed_path.startswith(target + os.sep):
                     print(f"🔁 変更検知: {changed_path} → 再起動")
                     self.start_app()
