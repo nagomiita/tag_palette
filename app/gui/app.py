@@ -204,7 +204,7 @@ class App(BaseWindow):
             self.current_page += 1
             self._draw_page()
 
-    def _go_to_page(self, event=None):  # イベント付きに
+    def _go_to_page(self, _):
         try:
             page = int(self.page_entry.get()) - 1
             if 0 <= page < self.total_pages:
