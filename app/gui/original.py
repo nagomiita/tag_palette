@@ -65,7 +65,7 @@ class Original(BaseToplevel):
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 
         # スクロール領域の更新
-        def on_configure(event):
+        def on_configure(_):
             canvas.configure(scrollregion=canvas.bbox("all"))
             canvas.itemconfig(window_id, width=canvas.winfo_width())
 
@@ -74,10 +74,8 @@ class Original(BaseToplevel):
             "<Configure>", lambda e: canvas.itemconfig(window_id, width=e.width)
         )
 
-        # マウスホイール対応
-        canvas.bind_all(
-            "<MouseWheel>", lambda e: canvas.yview_scroll(-int(e.delta / 120), "units")
-        )
+        # --- マウスホイールのバインド
+        self.enable_mousewheel_scroll(canvas)
 
         # ダミーのサムネイルを追加
         for i in range(30):

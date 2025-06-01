@@ -74,9 +74,6 @@ class App(BaseWindow):
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-        self.canvas.bind_all("<Button-4>", self._on_mousewheel_linux)
-        self.canvas.bind_all("<Button-5>", self._on_mousewheel_linux)
         self.gallery_frame = ctk.CTkFrame(self.canvas, fg_color="#222222")
         self.canvas.create_window((0, 0), window=self.gallery_frame, anchor="nw")
 
@@ -84,6 +81,7 @@ class App(BaseWindow):
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
+        self.enable_mousewheel_scroll(self.canvas)
 
     # ---------------- IMAGE LOADING ----------------
 
