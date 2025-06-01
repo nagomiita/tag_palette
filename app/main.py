@@ -3,15 +3,56 @@ from pathlib import Path
 
 import customtkinter as ctk
 from PIL import Image, ImageEnhance, ImageFilter
+from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy.orm import Session, declarative_base
 
 # === 設定 ===
 FONT_TYPE = "meiryo"
 FONT_SIZE = 13
-THUMBNAIL_SIZE = (150, 200)
+THUMBNAIL_SIZE = (190, 200)
 IMAGE_DIR = Path("images")
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 MARGIN = 10
 SHADOW_OFFSET = 4
+
+
+DB_PATH = "data.db"
+THUMB_DIR = Path("thumbnails")
+THUMB_DIR.mkdir(exist_ok=True)
+
+Base = declarative_base()
+engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+
+
+class ImageEntry(Base):
+    __tablename__ = "images"
+    id = Column(Integer, primary_key=True)
+    image_path = Column(String, nullable=False)
+    thumbnail_path = Column(String, nullable=False)
+
+
+def initialize_database():
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        registered_paths = {
+            row.image_path for row in session.query(ImageEntry.image_path).all()
+        }
+
+        for img_path in sorted(IMAGE_DIR.glob("*")):
+            if img_path.suffix.lower() not in SUPPORTED_FORMATS:
+                continue
+            if str(img_path) in registered_paths:
+                continue
+
+            thumb_path = THUMB_DIR / f"{img_path.stem}_thumb.png"
+            img = Image.open(img_path)
+            img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+            img.save(thumb_path)
+
+            entry = ImageEntry(image_path=str(img_path), thumbnail_path=str(thumb_path))
+            session.add(entry)
+
+        session.commit()
 
 
 # === ヘルパー ===
@@ -51,9 +92,15 @@ class BaseToplevel(ctk.CTkToplevel, WindowBaseMixin):
 # === サムネイルラベル ===
 class ImageThumbnail(ctk.CTkLabel):
     def __init__(
-        self, parent, image_path: Path, size=THUMBNAIL_SIZE, click_callback=None
+        self,
+        parent,
+        image_id: int,
+        image_path: Path,
+        size=THUMBNAIL_SIZE,
+        click_callback=None,
     ):
         super().__init__(parent, text="", fg_color="#333333", corner_radius=10)
+        self.image_id = image_id
         self.image_path = image_path
         self.size = size
         self.click_callback = click_callback
@@ -96,7 +143,7 @@ class ImageThumbnail(ctk.CTkLabel):
 
     def __bind_events(self):
         if self.click_callback:
-            self.bind("<Button-1>", lambda e: self.click_callback(self.image_path))
+            self.bind("<Button-1>", lambda e: self.click_callback(self.image_id))
         self.bind("<Enter>", self.__on_enter)
         self.bind("<Leave>", self.__on_leave)
 
@@ -156,37 +203,48 @@ class App(BaseWindow):
         self.current_columns = columns
 
         row = col = 0
-        for img_path in sorted(IMAGE_DIR.glob("*")):
-            if img_path.suffix.lower() not in SUPPORTED_FORMATS:
-                continue
+        with Session(engine) as session:
+            for entry in session.query(ImageEntry).order_by(ImageEntry.id).all():
+                frame = ctk.CTkFrame(self.gallery_frame)
+                frame.grid(row=row, column=col, padx=10, pady=10)
+                self.image_frames.append(frame)
 
-            frame = ctk.CTkFrame(self.gallery_frame)
-            frame.grid(row=row, column=col, padx=10, pady=10)
-            self.image_frames.append(frame)
+                thumb = ImageThumbnail(
+                    frame,
+                    image_id=entry.id,
+                    image_path=Path(entry.thumbnail_path),
+                    size=self.thumbnail_size,
+                    click_callback=self.__show_full_image,
+                )
+                thumb.pack()
 
-            thumb = ImageThumbnail(
-                frame,
-                image_path=img_path,
-                size=self.thumbnail_size,
-                click_callback=self.__show_full_image,
-            )
-            thumb.pack()
+                caption = ctk.CTkLabel(
+                    frame, text=Path(entry.image_path).name, font=self.fonts
+                )
+                caption.pack()
 
-            caption = ctk.CTkLabel(frame, text=img_path.name, font=self.fonts)
-            caption.pack()
-
-            col += 1
-            if col >= columns:
-                col = 0
-                row += 1
+                col += 1
+                if col >= columns:
+                    col = 0
+                    row += 1
 
     def __on_resize(self, _):
         new_columns = max(1, self.winfo_width() // (self.thumbnail_size[0] + 50))
         if new_columns != self.current_columns:
             self.__load_images()
 
-    def __show_full_image(self, image_path: Path):
+    def __show_full_image(self, image_id: int):
         try:
+            with Session(engine) as session:
+                entry = (
+                    session.query(ImageEntry).filter(ImageEntry.id == image_id).first()
+                )
+                if not entry:
+                    print(f"[Error] No image found with ID {image_id}")
+                    return
+
+                image_path = Path(entry.image_path)
+
             top = BaseToplevel(self)
             top.title(image_path.name)
 
@@ -219,5 +277,6 @@ class App(BaseWindow):
 
 # === 実行 ===
 if __name__ == "__main__":
+    initialize_database()
     app = App()
     app.mainloop()
