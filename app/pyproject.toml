@@ -13,5 +13,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "psutil>=7.0.0",
+    "pytest>=8.3.5",
+    "pytest-pythonpath>=0.7.3",
     "watchdog>=6.0.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
