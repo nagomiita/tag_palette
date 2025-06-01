@@ -11,15 +11,16 @@ SCRIPT_NAME = "main.py"  # メインスクリプト（再実行対象）
 # 監視したいファイルやディレクトリのリスト
 WATCH_TARGETS = [
     "main.py",
-    "ui.py",
-    "logic.py",
-    # "components/",  # ディレクトリも指定可能（再帰なし）
+    "gui/",
+    "db/",
+    "config.py",
 ]
 
 
 class ReloadHandler(FileSystemEventHandler):
     def __init__(self):
         self.process = None
+        self.watch_targets = [os.path.abspath(t) for t in WATCH_TARGETS]
         self.start_app()
 
     def start_app(self):
@@ -31,10 +32,18 @@ class ReloadHandler(FileSystemEventHandler):
         self.process = subprocess.Popen([sys.executable, SCRIPT_NAME])
 
     def on_modified(self, event):
-        changed_path = os.path.relpath(event.src_path)
-        if any(changed_path.startswith(t) for t in WATCH_TARGETS):
-            print(f"🔁 変更検知: {changed_path} → 再起動")
-            self.start_app()
+        changed_path = os.path.abspath(event.src_path)
+        for target in self.watch_targets:
+            if os.path.isdir(target):
+                # 変更されたファイルがディレクトリ配下にあるか
+                if changed_path.startswith(target + os.sep):
+                    print(f"🔁 変更検知: {changed_path} → 再起動")
+                    self.start_app()
+                    break
+            elif changed_path == target:
+                print(f"🔁 変更検知: {changed_path} → 再起動")
+                self.start_app()
+                break
 
 
 if __name__ == "__main__":
