@@ -2,7 +2,7 @@ from pathlib import Path
 
 FONT_TYPE = "meiryo"
 FONT_SIZE = 13
-THUMBNAIL_SIZE = (190, 200)
+THUMBNAIL_SIZE = (190, 190)
 IMAGE_DIR = Path("images")
 THUMB_DIR = Path("thumbnails")
 DB_PATH = "data.db"

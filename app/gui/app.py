@@ -1,3 +1,4 @@
+from math import ceil
 from pathlib import Path
 
 import customtkinter as ctk
@@ -21,10 +22,14 @@ class App(BaseWindow):
         self.thumbnail_size = THUMBNAIL_SIZE
         self.image_frames: list[ctk.CTkFrame] = []
         self.current_columns: int = 5
+        self.current_page = 0
+        self.page_size = 36
+        self.total_pages = 0
 
         self.viewmodel = GalleryViewModel()
 
         self._setup_toggle_button()
+        self._setup_pagination_controls()
         self._setup_scrollable_canvas()
         self.bind("<Configure>", self._on_resize)
 
@@ -42,6 +47,22 @@ class App(BaseWindow):
             else "お気に入りのみ表示"
         )
         self._load_images()
+
+    def _setup_pagination_controls(self):
+        self.pagination_frame = ctk.CTkFrame(self)
+        self.pagination_frame.pack(side="bottom", pady=10)
+
+        self.prev_button = ctk.CTkButton(
+            self.pagination_frame, text="< Prev", command=self._prev_page
+        )
+        self.next_button = ctk.CTkButton(
+            self.pagination_frame, text="Next >", command=self._next_page
+        )
+        self.page_label = ctk.CTkLabel(self.pagination_frame, text="")
+
+        self.prev_button.pack(side="left", padx=10)
+        self.page_label.pack(side="left", padx=10)
+        self.next_button.pack(side="left", padx=10)
 
     def _setup_scrollable_canvas(self):
         self.canvas = ctk.CTkCanvas(self, background="#222222")
@@ -74,21 +95,25 @@ class App(BaseWindow):
         self.row = self.col = 0
         self.batch_size = 10
         self.index = 0
-        self._draw_batch()
+        self.total_pages = ceil(len(self.entries) / self.page_size)
+        self.current_columns = self._calculate_columns()
+        self._draw_page()
 
-    def _draw_batch(self):
-        end = min(self.index + self.batch_size, len(self.entries))
-        for i in range(self.index, end):
-            entry = self.entries[i]
+    def _draw_page(self):
+        self._clear_gallery()
+        start = self.current_page * self.page_size
+        end = start + self.page_size
+        page_entries = self.entries[start:end]
+
+        self.row = self.col = 0
+        for entry in page_entries:
             frame = self._create_thumbnail_frame(entry)
             frame.grid(row=self.row, column=self.col, padx=4, pady=4)
             self.image_frames.append(frame)
             self.col = (self.col + 1) % self.current_columns
             if self.col == 0:
                 self.row += 1
-        self.index = end
-        if self.index < len(self.entries):
-            self.after(10, self._draw_batch)
+        self.page_label.configure(text=f"{self.current_page + 1} / {self.total_pages}")
 
     def _create_thumbnail_frame(self, entry: ImageEntry):
         frame = ctk.CTkFrame(self.gallery_frame)
@@ -148,7 +173,6 @@ class App(BaseWindow):
         )
         self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
 
-        # 削除ボタン
         create_delete_button(
             container,
             command=lambda: self._on_delete(image_id, top),
@@ -168,6 +192,16 @@ class App(BaseWindow):
                 fg_color="#ff9eb5" if new_state else "#1f6aa5",
                 hover_color="#c268a7" if new_state else "#124c86",
             )
+
+    def _prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._draw_page()
+
+    def _next_page(self):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self._draw_page()
 
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")

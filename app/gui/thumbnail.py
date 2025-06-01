@@ -30,7 +30,8 @@ class ImageThumbnail(ctk.CTkFrame):
         is_fav = self.viewmodel.get_favorite_state()
         self.favorite_button = create_favorite_button(
             self, is_fav, self._toggle_favorite
-        ).place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+        )
+        self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
 
         delete_button = create_delete_button(self, self._on_delete)
         delete_button.place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
