@@ -62,3 +62,16 @@ def create_favorite_button(
         command=toggle,
     )
     return btn
+
+
+def create_toggle_favorites_button(
+    parent: ctk.CTkBaseClass, show_favorites_only: bool, command
+) -> ctk.CTkButton:
+    text = "すべて表示" if show_favorites_only else "お気に入りのみ表示"
+    return ctk.CTkButton(
+        parent,
+        text=text,
+        command=command,
+        width=160,
+        height=32,
+    )

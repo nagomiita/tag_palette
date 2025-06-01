@@ -8,7 +8,11 @@ from db.query import (
     get_image_entry_by_id,
 )
 from gui.base import BaseToplevel, BaseWindow
-from gui.components.button import create_delete_button, create_favorite_button
+from gui.components.button import (
+    create_delete_button,
+    create_favorite_button,
+    create_toggle_favorites_button,
+)
 from gui.thumbnail import ImageThumbnail
 from utils.image import load_full_image
 
@@ -27,12 +31,8 @@ class App(BaseWindow):
         self.bind("<Configure>", self._on_resize)
 
     def _setup_toggle_button(self):
-        self.toggle_button = ctk.CTkButton(
-            self,
-            text="お気に入りのみ表示",
-            command=self._toggle_favorites,
-            width=160,
-            height=32,
+        self.toggle_button = create_toggle_favorites_button(
+            self, self.show_favorites_only, self._toggle_favorites
         )
         self.toggle_button.pack(pady=(10, 0), padx=10, anchor="nw")
 
@@ -107,16 +107,10 @@ class App(BaseWindow):
 
         top = BaseToplevel(self)
         top.title(Path(entry.image_path).name)
-
-        # コンテナフレーム（画像とボタンを重ねる用）
         container = ctk.CTkFrame(top, fg_color="transparent")
         container.pack(padx=20, pady=20, expand=True)
-
-        # 画像ラベル
         label = load_full_image(container, entry.image_path)
         label.pack()
-
-        # お気に入りボタン（画像右下に配置）
         fav_button = create_favorite_button(container, image_id)
         fav_button.place(relx=1.0, rely=1.0, anchor="se", x=-8, y=-8)
         del_button = create_delete_button(
