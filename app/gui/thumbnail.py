@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from config import SHADOW_OFFSET
-from PIL import Image, ImageEnhance, ImageFilter
+from db.query import get_favorite_flag, toggle_favorite_flag
+from utils.image import generate_thumbnail_images
 
 
 class ImageThumbnail(ctk.CTkFrame):
@@ -17,37 +18,24 @@ class ImageThumbnail(ctk.CTkFrame):
         self._load_image()
         self._bind_events()
 
+        self.is_fav = get_favorite_flag(self.image_id)
         self.favorite_button = ctk.CTkButton(
             self,
-            text="♡",  # 非お気に入り：♡, お気に入り：♥
-            width=20,
-            height=20,
-            font=("Arial", 14),
+            text="♥" if self.is_fav else "♡",
+            fg_color="#ff9eb5" if self.is_fav else "#1f6aa5",
+            width=30,
+            height=30,
+            font=("Arial", 24),
             command=self.toggle_favorite,
         )
         self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
 
     def _load_image(self):
         try:
-            img = Image.open(self.image_path)
-            img.thumbnail(self.size, Image.Resampling.LANCZOS)
-            img = img.convert("RGBA")
-            canvas = Image.new("RGBA", self.size, (0, 0, 0, 0))
-            x = (self.size[0] - img.width) // 2
-            y = (self.size[1] - img.height) // 2
-            canvas.paste(img, (x, y), img)
-            shadow = canvas.copy().filter(ImageFilter.GaussianBlur(2))
-            final_img = Image.new(
-                "RGBA",
-                (self.size[0] + SHADOW_OFFSET, self.size[1] + SHADOW_OFFSET),
-                (0, 0, 0, 0),
+            self._photo, self._hover_photo = generate_thumbnail_images(
+                self.image_path, self.size, SHADOW_OFFSET
             )
-            final_img.paste(shadow, (2, 2), shadow)
-            final_img.paste(canvas, (0, 0), canvas)
-            self._photo = ctk.CTkImage(light_image=final_img, size=self.size)
             self.label.configure(image=self._photo)
-            hover = ImageEnhance.Brightness(canvas).enhance(0.6)
-            self._hover_photo = ctk.CTkImage(light_image=hover, size=self.size)
         except Exception as e:
             print(f"[Error] loading {self.image_path}: {e}")
 
@@ -64,15 +52,10 @@ class ImageThumbnail(ctk.CTkFrame):
         self.label.configure(image=self._photo)
 
     def toggle_favorite(self):
-        from db.init import engine
-        from db.models import ImageEntry
-        from sqlalchemy.orm import Session
-
-        with Session(engine) as session:
-            entry = (
-                session.query(ImageEntry).filter(ImageEntry.id == self.image_id).first()
+        is_fav = toggle_favorite_flag(self.image_id)
+        if is_fav is not None:
+            self.is_fav = is_fav
+            self.favorite_button.configure(
+                text="♥" if self.is_fav else "♡",
+                fg_color="#ff9eb5" if self.is_fav else "#1f6aa5",
             )
-            if entry:
-                entry.is_favorite = not entry.is_favorite
-                session.commit()
-                self.favorite_button.configure(text="♥" if entry.is_favorite else "♡")
