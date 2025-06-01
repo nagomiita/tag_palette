@@ -2,7 +2,11 @@ from pathlib import Path
 
 import customtkinter as ctk
 from config import THUMBNAIL_SIZE
-from db.query import get_all_image_entries, get_image_entry_by_id
+from db.query import (
+    get_all_image_entries,
+    get_favorite_image_entries,
+    get_image_entry_by_id,
+)
 from gui.base import BaseToplevel, BaseWindow
 from gui.thumbnail import ImageThumbnail
 from utils.image import load_full_image
@@ -15,8 +19,21 @@ class App(BaseWindow):
         self.thumbnail_size = THUMBNAIL_SIZE
         self.image_frames = []
         self.current_columns = 5
+        self.show_favorites_only = False
+
+        self._setup_toggle_button()
         self._setup_gallery_canvas()
         self.bind("<Configure>", self._on_resize)
+
+    def _setup_toggle_button(self):
+        self.toggle_button = ctk.CTkButton(
+            self,
+            text="お気に入りのみ表示",
+            command=self._toggle_favorites,
+            width=160,
+            height=32,
+        )
+        self.toggle_button.pack(pady=(10, 0), padx=10, anchor="nw")
 
     def _setup_gallery_canvas(self):
         self.canvas = ctk.CTkCanvas(self, background="#222222")
@@ -42,12 +59,19 @@ class App(BaseWindow):
             f.destroy()
         self.image_frames.clear()
         w = self.winfo_width()
-        columns = max(1, w // (self.thumbnail_size[0] + 20))
+        columns = max(1, w // (self.thumbnail_size[0] + 50))
         self.current_columns = columns
         row = col = 0
-        for e in get_all_image_entries():
+
+        entries = (
+            get_favorite_image_entries()
+            if self.show_favorites_only
+            else get_all_image_entries()
+        )
+
+        for e in entries:
             f = ctk.CTkFrame(self.gallery_frame)
-            f.grid(row=row, column=col, padx=4, pady=4)
+            f.grid(row=row, column=col, padx=10, pady=10)
             self.image_frames.append(f)
             thumb = ImageThumbnail(
                 f,
@@ -63,8 +87,15 @@ class App(BaseWindow):
             if col == 0:
                 row += 1
 
+    def _toggle_favorites(self):
+        self.show_favorites_only = not self.show_favorites_only
+        self.toggle_button.configure(
+            text="すべて表示" if self.show_favorites_only else "お気に入りのみ表示"
+        )
+        self._load_images()
+
     def _on_resize(self, _):
-        new_cols = max(1, self.winfo_width() // (self.thumbnail_size[0] + 20))
+        new_cols = max(1, self.winfo_width() // (self.thumbnail_size[0] + 50))
         if new_cols != self.current_columns:
             self._load_images()
 
@@ -74,7 +105,7 @@ class App(BaseWindow):
             return
         top = BaseToplevel(self)
         top.title(Path(entry.image_path).name)
-        label = load_full_image(top, entry.image_path)
+        label = load_full_image(top, entry.image_path)  # 切り出した関数を使用
         label.pack(padx=20, pady=20, expand=True)
 
     def _on_mousewheel(self, event):

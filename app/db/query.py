@@ -27,3 +27,13 @@ def get_favorite_flag(image_id: int) -> bool:
     with Session(engine) as session:
         entry = session.query(ImageEntry).filter(ImageEntry.id == image_id).first()
         return entry.is_favorite if entry else False
+
+
+def get_favorite_image_entries() -> list[ImageEntry]:
+    with Session(engine) as session:
+        return (
+            session.query(ImageEntry)
+            .filter_by(is_favorite=True)
+            .order_by(ImageEntry.id)
+            .all()
+        )
