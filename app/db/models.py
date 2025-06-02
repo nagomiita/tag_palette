@@ -10,6 +10,8 @@ class ImageEntry(Base):
     image_path = Column(String, unique=True, nullable=False)
     thumbnail_path = Column(String, unique=True, nullable=False)
     is_favorite = Column(Boolean, default=False)
+    tag_embedding = Column(Text)
+    pose_embedding = Column(Text)
     image_tags = relationship(
         "ImageTag", back_populates="image", cascade="all, delete-orphan"
     )

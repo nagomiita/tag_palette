@@ -15,11 +15,19 @@ def initialize_database():
     image_paths = resize_images(registered)
 
     print(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
+
+    total = len(image_paths)
     for idx, (original_path, thumb_path) in enumerate(image_paths, start=1):
-        print(f"  [{idx}/{len(image_paths)}] 登録中: {original_path}")
+        # シンプルな進捗バー表示
+        progress = int(50 * idx / total)  # 50文字の進捗バー
+        bar = "█" * progress + "-" * (50 - progress)
+        percent = 100 * idx / total
+
+        print(f"\r[{bar}] {percent:.1f}% ({idx}/{total})", end="", flush=True)
+
         add_image_entry(str(original_path), str(thumb_path))
 
-    print("✅ 初期化完了")
+    print("\n✅ 初期化完了")
 
 
 def dispose_engine():
