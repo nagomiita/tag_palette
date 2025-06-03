@@ -47,20 +47,23 @@ def _hash_path(path: Path) -> str:
 
 
 def find_unregistered_images(registered: set[str]) -> list[Path]:
-    """登録されていない画像のパスを探索(シンボリックリンク先の画像も含むが循環参照は除外)"""
+    """登録されていない画像のパスを探索（シンボリックリンク先の画像も含むが循環参照は除外）"""
+
+    def _is_valid_image(img_path: Path, registered: set[str]) -> bool:
+        """画像がサポート形式で、未登録かどうかを判定"""
+        return (
+            img_path.suffix.lower() in SUPPORTED_FORMATS
+            and "_thumbnail" not in img_path.stem
+            and str(img_path) not in registered
+        )
+
     unregistered = []
     for img_path in IMAGE_DIR.rglob("*"):
         if img_path.is_symlink():
-            for img_path in img_path.rglob("*"):
-                if (
-                    img_path.suffix.lower() in SUPPORTED_FORMATS
-                    and str(img_path) not in registered
-                ):
-                    unregistered.append(img_path)
-        elif (
-            img_path.suffix.lower() in SUPPORTED_FORMATS
-            and str(img_path) not in registered
-        ):
+            for child_path in img_path.rglob("*"):
+                if _is_valid_image(child_path, registered):
+                    unregistered.append(child_path)
+        elif _is_valid_image(img_path, registered):
             unregistered.append(img_path)
     return unregistered
 
@@ -86,7 +89,7 @@ def _save_thumbnail_image(img: Image.Image, img_path: Path) -> Path:
     """PIL Imageをサムネイルパスに保存する"""
     THUMB_DIR.mkdir(exist_ok=True)
     thumb_hash = _hash_path(img_path)
-    thumb_path = THUMB_DIR / f"{thumb_hash}_thumb.png"
+    thumb_path = THUMB_DIR / f"{thumb_hash}_thumbnail.png"
     img.save(thumb_path)
     return thumb_path
 
