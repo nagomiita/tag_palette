@@ -3,6 +3,7 @@ from pathlib import Path
 from db.engine import engine
 from db.models import Base
 from db.query import add_image_entry, get_registered_image_paths
+from tqdm import tqdm
 from utils.folder import clean_broken_symlinks, create_symlink, select_image_folder
 from utils.image import find_unregistered_images, generate_thumbnails
 
@@ -34,16 +35,7 @@ def initialize_database():
     image_paths = generate_thumbnails(unregistered)
 
     print(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
-
-    total = len(image_paths)
-    for idx, (original_path, thumb_path) in enumerate(image_paths, start=1):
-        # シンプルな進捗バー表示
-        progress = int(50 * idx / total)  # 50文字の進捗バー
-        bar = "█" * progress + "-" * (50 - progress)
-        percent = 100 * idx / total
-
-        print(f"\r[{bar}] {percent:.1f}% ({idx}/{total})", end="", flush=True)
-
+    for original_path, thumb_path in tqdm(image_paths):
         add_image_entry(str(original_path), str(thumb_path))
 
     print("\n✅ 初期化完了")

@@ -11,6 +11,7 @@ from config import (
     THUMBNAIL_SIZE,
 )
 from PIL import Image, ImageEnhance, ImageFilter
+from tqdm import tqdm
 
 
 @lru_cache(maxsize=512)
@@ -45,33 +46,29 @@ def _hash_path(path: Path) -> str:
     return hashlib.md5(path.as_posix().encode("utf-8")).hexdigest()
 
 
-def find_unregistered_images(
-    registered: set[str], max_files: int = 50000
-) -> list[Path]:
-    """登録されていない画像のパスを探索（最大 max_files 件まで）"""
-    unregistered: list[Path] = []
-    count = 0
-
-    for img_path in IMAGE_DIR.rglob("*", recurse_symlinks=True):
-        if (
+def find_unregistered_images(registered: set[str]) -> list[Path]:
+    """登録されていない画像のパスを探索(シンボリックリンク先の画像も含むが循環参照は除外)"""
+    unregistered = []
+    for img_path in IMAGE_DIR.rglob("*"):
+        if img_path.is_symlink():
+            for img_path in img_path.rglob("*"):
+                if (
+                    img_path.suffix.lower() in SUPPORTED_FORMATS
+                    and str(img_path) not in registered
+                ):
+                    unregistered.append(img_path)
+        elif (
             img_path.suffix.lower() in SUPPORTED_FORMATS
             and str(img_path) not in registered
         ):
             unregistered.append(img_path)
-        count += 1
-        if count >= max_files:
-            print(
-                f"⚠️ 一度に処理できる最大探索数 {max_files} 件に達したため中断しました。"
-            )
-            break
-
     return unregistered
 
 
 def generate_thumbnails(image_paths: list[Path]) -> list[tuple[str, str]]:
     """画像をサムネイルとしてリサイズし保存"""
     thumbnails = []
-    for img_path in image_paths:
+    for img_path in tqdm(image_paths):
         img = _resize_image(img_path, THUMBNAIL_SIZE)
         thumb_path = _save_thumbnail_image(img, img_path)
         thumbnails.append((str(img_path), str(thumb_path)))

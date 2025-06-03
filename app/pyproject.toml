@@ -8,6 +8,7 @@ dependencies = [
     "customtkinter>=5.2.2",
     "pillow>=11.2.1",
     "sqlalchemy>=2.0.41",
+    "tqdm>=4.67.1",
 ]
 
 [dependency-groups]
