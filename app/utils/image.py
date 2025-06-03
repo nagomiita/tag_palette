@@ -45,27 +45,57 @@ def _hash_path(path: Path) -> str:
     return hashlib.md5(path.as_posix().encode("utf-8")).hexdigest()
 
 
-def resize_images(registered: set[str]) -> list[tuple[str, str]]:
-    images: list[tuple[str, str]] = []
-    THUMB_DIR.mkdir(exist_ok=True)
-    for img_path in IMAGE_DIR.rglob("*"):
-        if (
-            img_path.suffix.lower() not in SUPPORTED_FORMATS
-            or str(img_path) in registered
-        ):
-            continue
-        thumb_hash = _hash_path(img_path)
-        thumb_path = THUMB_DIR / f"{thumb_hash}_thumb.png"
+def find_unregistered_images(
+    registered: set[str], max_files: int = 50000
+) -> list[Path]:
+    """登録されていない画像のパスを探索（最大 max_files 件まで）"""
+    unregistered: list[Path] = []
+    count = 0
 
-        img = Image.open(img_path)
-        img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
-        img.save(thumb_path)
-        images.append((str(img_path), str(thumb_path)))
-    return images
+    for img_path in IMAGE_DIR.rglob("*", recurse_symlinks=True):
+        if (
+            img_path.suffix.lower() in SUPPORTED_FORMATS
+            and str(img_path) not in registered
+        ):
+            unregistered.append(img_path)
+        count += 1
+        if count >= max_files:
+            print(
+                f"⚠️ 一度に処理できる最大探索数 {max_files} 件に達したため中断しました。"
+            )
+            break
+
+    return unregistered
+
+
+def generate_thumbnails(image_paths: list[Path]) -> list[tuple[str, str]]:
+    """画像をサムネイルとしてリサイズし保存"""
+    thumbnails = []
+    for img_path in image_paths:
+        img = _resize_image(img_path, THUMBNAIL_SIZE)
+        thumb_path = _save_thumbnail_image(img, img_path)
+        thumbnails.append((str(img_path), str(thumb_path)))
+    return thumbnails
+
+
+def _resize_image(img_path: Path, size: tuple[int, int]) -> Image.Image:
+    """画像を指定サイズにリサイズしたPIL Imageを返す"""
+    img = Image.open(img_path)
+    img.thumbnail(size, Image.Resampling.LANCZOS)
+    return img
+
+
+def _save_thumbnail_image(img: Image.Image, img_path: Path) -> Path:
+    """PIL Imageをサムネイルパスに保存する"""
+    THUMB_DIR.mkdir(exist_ok=True)
+    thumb_hash = _hash_path(img_path)
+    thumb_path = THUMB_DIR / f"{thumb_hash}_thumb.png"
+    img.save(thumb_path)
+    return thumb_path
 
 
 def _generate_thumbnail_images(
-    image_path, size, shadow_offset=4
+    image_path: Path, size, shadow_offset=4
 ) -> tuple[ctk.CTkImage, ctk.CTkImage]:
     """
     サムネイル画像とホバー用画像を生成するユーティリティ関数。
@@ -78,8 +108,7 @@ def _generate_thumbnail_images(
     Returns:
         tuple: (通常表示用CTkImage, ホバー用CTkImage)
     """
-    img = Image.open(image_path)
-    img.thumbnail(size, Image.Resampling.LANCZOS)
+    img = _resize_image(image_path, size)
     img = img.convert("RGBA")
 
     canvas = Image.new("RGBA", size, (0, 0, 0, 0))
