@@ -22,7 +22,7 @@ class Tag(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     tag = Column(String, unique=True, nullable=False)
-    translated_tag = Column(String)
+    tag_ja = Column(String)
     genre = Column(String)
     embedding = Column(Text)
     is_r18 = Column(Boolean, default=False)

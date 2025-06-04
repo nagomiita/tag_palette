@@ -1,5 +1,6 @@
 import hashlib
 from functools import lru_cache
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 import customtkinter as ctk
@@ -14,16 +15,37 @@ from PIL import Image, ImageEnhance, ImageFilter
 from tqdm import tqdm
 
 
+def _process_and_save(args):
+    """画像をリサイズしてサムネイルを保存するマルチプロセス対象の関数"""
+    img_path, thumbnail_size, thumb_dir = args
+    try:
+        with Image.open(img_path) as img:
+            img = img.convert("RGB")
+            img.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
+
+            thumb_hash = hashlib.md5(img_path.as_posix().encode("utf-8")).hexdigest()
+            thumb_path = thumb_dir / f"{thumb_hash}_thumbnail.png"
+            thumb_dir.mkdir(exist_ok=True)
+            img.save(thumb_path)
+
+            return (str(img_path), str(thumb_path))
+    except Exception as e:
+        print(f"⚠ 失敗: {img_path} → {e}")
+        return None
+
+
 class ImageProcessor:
     """画像処理の基本機能を提供するクラス"""
 
     def __init__(self, thumbnail_size: tuple[int, int] = THUMBNAIL_SIZE):
         self.thumbnail_size = thumbnail_size
 
-    def resize_image(self, img_path: Path, size: tuple[int, int]) -> Image.Image:
+    def resize_image(
+        self, img_path: Path, size: tuple[int, int], channel: str = "RGBA"
+    ) -> Image.Image:
         """画像を指定サイズにリサイズしたPIL Imageを返す"""
         with Image.open(img_path) as img:
-            img = img.convert("RGBA")
+            img = img.convert(channel)
             img.thumbnail(size, Image.Resampling.LANCZOS)
             return img
 
@@ -69,10 +91,8 @@ class ImageProcessor:
 class ImageCache:
     """画像キャッシュを管理するクラス"""
 
-    def __init__(self, max_size: int = 512, enable_cache: bool = ENABLE_IMAGE_CACHE):
+    def __init__(self, enable_cache: bool = ENABLE_IMAGE_CACHE):
         self.enable_cache = enable_cache
-        self.max_size = max_size
-        self._cache = {}
 
     @lru_cache(maxsize=512)
     def _cached_loader(
@@ -150,13 +170,13 @@ class ImageFileManager:
     def generate_thumbnails(
         self, image_paths: list[Path], processor: ImageProcessor
     ) -> list[tuple[str, str]]:
-        """画像をサムネイルとしてリサイズし保存"""
-        thumbnails: list[tuple[str, str]] = []
-        for img_path in tqdm(image_paths):
-            img = processor.resize_image(img_path, processor.thumbnail_size)
-            thumb_path = self._save_thumbnail(img, img_path)
-            thumbnails.append((str(img_path), str(thumb_path)))
-        return thumbnails
+        """画像をサムネイルとして並列リサイズ＆保存"""
+        args = [
+            (path, processor.thumbnail_size, self.thumb_dir) for path in image_paths
+        ]
+        with Pool(processes=cpu_count()) as pool:
+            results = list(tqdm(pool.imap(_process_and_save, args), total=len(args)))
+        return [r for r in results if r is not None]
 
     def delete_image_files(self, image_path: Path, thumbnail_path: Path) -> None:
         """画像とサムネイルのファイルを削除"""
