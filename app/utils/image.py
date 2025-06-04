@@ -80,9 +80,10 @@ def generate_thumbnails(image_paths: list[Path]) -> list[tuple[str, str]]:
 
 def _resize_image(img_path: Path, size: tuple[int, int]) -> Image.Image:
     """画像を指定サイズにリサイズしたPIL Imageを返す"""
-    img = Image.open(img_path)
-    img.thumbnail(size, Image.Resampling.LANCZOS)
-    return img
+    with Image.open(img_path) as img:
+        img = img.convert("RGB")
+        img.thumbnail(size, Image.Resampling.LANCZOS)
+        return img
 
 
 def _save_thumbnail_image(img: Image.Image, img_path: Path) -> Path:
