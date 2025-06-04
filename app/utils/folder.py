@@ -3,13 +3,8 @@ import sys
 from pathlib import Path
 from tkinter import Tk, filedialog
 
-from config import (
-    IMAGE_DIR,
-    THUMB_DIR,
-)
 
-
-def select_image_folder() -> Path:
+def select_image_folder() -> Path | None:
     root = Tk()
     root.withdraw()
     folder_path = filedialog.askdirectory(title="画像フォルダを選択してください")
@@ -37,17 +32,3 @@ def clean_broken_symlinks(base_dir: Path):
         if path.is_symlink() and not path.resolve().exists():
             print(f"🗑️ リンク切れを削除: {path}")
             path.unlink()
-
-
-def initialize_folders():
-    """
-    初期化時に必要なフォルダを作成する。
-    """
-    folders = [IMAGE_DIR, THUMB_DIR]
-    for folder in folders:
-        path = Path(folder)
-        if not path.exists():
-            path.mkdir(parents=True, exist_ok=True)
-            print(f"📂 フォルダ作成: {path}")
-        else:
-            print(f"📂 フォルダ既に存在: {path}")

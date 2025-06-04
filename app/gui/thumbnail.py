@@ -2,7 +2,7 @@ import customtkinter as ctk
 from config import SHADOW_OFFSET
 from gui.components.button import create_delete_button, create_favorite_button
 from gui.viewmodel import ImageThumbnailViewModel
-from utils.image import load_thumbnail_image
+from utils.image import image_manager
 
 
 class ImageThumbnail(ctk.CTkFrame):
@@ -44,7 +44,7 @@ class ImageThumbnail(ctk.CTkFrame):
 
     def _load_image(self):
         try:
-            self._photo, self._hover_photo = load_thumbnail_image(
+            self._photo, self._hover_photo = image_manager.load_thumbnail_image(
                 str(self.image_path), self.size, SHADOW_OFFSET
             )
             if self._photo:

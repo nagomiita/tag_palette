@@ -5,7 +5,7 @@ from db.models import Base
 from db.query import add_image_entry, get_registered_image_paths
 from tqdm import tqdm
 from utils.folder import clean_broken_symlinks, create_symlink, select_image_folder
-from utils.image import find_unregistered_images, generate_thumbnails
+from utils.image import image_manager
 
 
 def initialize_database():
@@ -17,22 +17,19 @@ def initialize_database():
     if not registered:
         print("⚠️ 画像がまだ登録されていません。画像フォルダを選択してください。")
         selected_folder = select_image_folder()
-        if not selected_folder:
-            print("⚠ フォルダが選択されませんでした。処理を中止します。")
-            return
         images_dir = Path("images")
         images_dir.mkdir(exist_ok=True)
         clean_broken_symlinks(Path("images"))
-
-        symlink_path = images_dir / selected_folder.name
-        create_symlink(selected_folder, symlink_path)
-    unregistered = find_unregistered_images(registered)
+        if selected_folder:
+            symlink_path = images_dir / selected_folder.name
+            create_symlink(selected_folder, symlink_path)
+    unregistered = image_manager.find_unregistered_images(registered)
     if not unregistered:
         print("✅ すでに全ての画像が登録されています。")
         return
 
     print("🖼 サムネイル画像の生成中...")
-    image_paths = generate_thumbnails(unregistered)
+    image_paths = image_manager.generate_thumbnails(unregistered)
 
     print(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
     for original_path, thumb_path in tqdm(image_paths):

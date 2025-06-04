@@ -4,7 +4,7 @@ import customtkinter as ctk
 from db.models import ImageEntry
 from gui.base import BaseToplevel
 from gui.components.button import create_delete_button, create_favorite_button
-from utils.image import load_full_image
+from utils.image import image_manager
 
 
 class Original(BaseToplevel):
@@ -25,7 +25,7 @@ class Original(BaseToplevel):
         image_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
         image_frame.pack()
 
-        label = load_full_image(image_frame, entry.image_path)
+        label = image_manager.load_full_image(image_frame, entry.image_path)
         label.pack(anchor="w")
 
         fav_button = create_favorite_button(
