@@ -1,10 +1,8 @@
-from pathlib import Path
-
 from db.engine import engine
 from db.models import Base
 from db.query import add_image_entry, get_registered_image_paths
 from tqdm import tqdm
-from utils.folder import clean_broken_symlinks, create_symlink, select_image_folder
+from utils.folder import image_link_manager
 from utils.image import image_manager
 
 
@@ -16,13 +14,9 @@ def initialize_database():
     registered = get_registered_image_paths()
     if not registered:
         print("⚠️ 画像がまだ登録されていません。画像フォルダを選択してください。")
-        selected_folder = select_image_folder()
-        images_dir = Path("images")
-        images_dir.mkdir(exist_ok=True)
-        clean_broken_symlinks(Path("images"))
+        selected_folder = image_link_manager.select_image_folder()
         if selected_folder:
-            symlink_path = images_dir / selected_folder.name
-            create_symlink(selected_folder, symlink_path)
+            image_link_manager.create_symlink(selected_folder)
     unregistered = image_manager.find_unregistered_images(registered)
     if not unregistered:
         print("✅ すでに全ての画像が登録されています。")
