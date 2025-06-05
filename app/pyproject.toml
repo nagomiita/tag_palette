@@ -14,6 +14,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "alembic>=1.16.1",
+    "nuitka>=2.7.6",
     "psutil>=7.0.0",
     "pytest>=8.3.5",
     "pytest-pythonpath>=0.7.3",

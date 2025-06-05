@@ -13,3 +13,6 @@ wheels/
 images/
 thumbnails/
 *.db
+*.dist/
+*.build/
+*.exe
