@@ -2,8 +2,8 @@ import os
 import time
 
 import psutil
+from config import DB_PATH
 
-DB_PATH = "data.db"
 MAX_RETRIES = 3
 RETRY_DELAY_SEC = 1.0
 
