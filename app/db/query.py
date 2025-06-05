@@ -80,6 +80,20 @@ def add_image_entry(image_path: Path, thumbnail_path: Path) -> None:
         session.commit()
 
 
+def add_image_entries(entries: list[tuple[Path, Path]]) -> None:
+    with get_session() as session:
+        image_objects = [
+            ImageEntry(
+                image_path=str(orig),
+                thumbnail_path=str(thumb),
+                created_at=image_manager.extract_captured_at(orig),
+            )
+            for orig, thumb in entries
+        ]
+        session.add_all(image_objects)
+        session.commit()
+
+
 def delete_image_entry(image_id: int) -> bool:
     with get_session() as session:
         entry = session.query(ImageEntry).filter_by(id=image_id).first()

@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from functools import lru_cache
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
@@ -12,10 +13,9 @@ from config import (
     THUMBNAIL_SIZE,
 )
 from PIL import Image, ImageEnhance, ImageFilter
-from tqdm import tqdm
 
 
-def _process_and_save(args):
+def _process_and_save(args) -> tuple[Path, Path]:
     """画像をリサイズしてサムネイルを保存するマルチプロセス対象の関数"""
     img_path, thumbnail_size, thumb_dir = args
     try:
@@ -28,10 +28,10 @@ def _process_and_save(args):
             thumb_dir.mkdir(exist_ok=True)
             img.save(thumb_path)
 
-            return (str(img_path), str(thumb_path))
+            return (img_path, thumb_path)
     except Exception as e:
         print(f"⚠ 失敗: {img_path} → {e}")
-        return None
+        raise
 
 
 class ImageProcessor:
@@ -86,6 +86,11 @@ class ImageProcessor:
         label = ctk.CTkLabel(parent, image=photo, text="")
         label.image = photo  # ガーベジコレクション防止
         return label
+
+    def extract_captured_at(self, img_path: Path) -> datetime:
+        """ファイルの作成日時を抽出してISO形式で返す"""
+        ts = img_path.stat().st_birthtime
+        return datetime.fromtimestamp(ts)
 
 
 class ImageCache:
@@ -169,13 +174,13 @@ class ImageFileManager:
 
     def generate_thumbnails(
         self, image_paths: list[Path], processor: ImageProcessor
-    ) -> list[tuple[str, str]]:
+    ) -> list[tuple[Path, Path]]:
         """画像をサムネイルとして並列リサイズ＆保存"""
         args = [
             (path, processor.thumbnail_size, self.thumb_dir) for path in image_paths
         ]
         with Pool(processes=cpu_count()) as pool:
-            results = list(tqdm(pool.imap(_process_and_save, args), total=len(args)))
+            results = list(pool.imap(_process_and_save, args))
         return [r for r in results if r is not None]
 
     def delete_image_files(self, image_path: Path, thumbnail_path: Path) -> None:
@@ -218,9 +223,13 @@ class ImageManager:
         """未登録画像を検索"""
         return self.file_manager.find_unregistered_images(registered)
 
-    def generate_thumbnails(self, image_paths: list[Path]) -> list[tuple[str, str]]:
+    def generate_thumbnails(self, image_paths: list[Path]) -> list[tuple[Path, Path]]:
         """サムネイル生成"""
         return self.file_manager.generate_thumbnails(image_paths, self.processor)
+
+    def extract_captured_at(self, img_path: Path) -> datetime:
+        """画像のキャプチャ日時を抽出"""
+        return self.processor.extract_captured_at(img_path)
 
     def delete_image_files(self, image_path: Path, thumbnail_path: Path) -> None:
         """画像ファイル削除"""

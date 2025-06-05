@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -9,9 +11,12 @@ class ImageEntry(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     image_path = Column(String, unique=True, nullable=False)
     thumbnail_path = Column(String, unique=True, nullable=False)
-    is_favorite = Column(Boolean, default=False)
     tag_embedding = Column(Text)
     pose_embedding = Column(Text)
+    created_at = Column(DateTime)
+    registered_at = Column(DateTime, default=datetime.now())
+    is_favorite = Column(Boolean, default=False)
+    is_r18 = Column(Boolean, default=False)
     image_tags = relationship(
         "ImageTag", back_populates="image", cascade="all, delete-orphan"
     )
@@ -25,6 +30,7 @@ class Tag(Base):
     tag_ja = Column(String)
     genre = Column(String)
     embedding = Column(Text)
+    registered_at = Column(DateTime, default=datetime.now())
     is_r18 = Column(Boolean, default=False)
     disable = Column(Boolean, default=False)
 
@@ -51,3 +57,4 @@ class Genre(Base):
 
     name_en = Column(String, primary_key=True)
     name_ja = Column(String)
+    registered_at = Column(DateTime, default=lambda: datetime.now().isoformat())

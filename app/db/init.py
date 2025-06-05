@@ -1,6 +1,6 @@
 from db.engine import engine
 from db.models import Base
-from db.query import add_image_entry, get_registered_image_paths
+from db.query import add_image_entries, get_registered_image_paths
 from tqdm import tqdm
 from utils.folder import image_link_manager
 from utils.image import image_manager
@@ -23,11 +23,10 @@ def initialize_database():
         return
 
     print("🖼 サムネイル画像の生成中...")
-    image_paths = image_manager.generate_thumbnails(unregistered)
+    image_paths = image_manager.generate_thumbnails(tqdm(unregistered))
 
     print(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
-    for original_path, thumb_path in tqdm(image_paths):
-        add_image_entry(str(original_path), str(thumb_path))
+    add_image_entries(tqdm(image_paths))
 
     print("\n✅ 初期化完了")
 
