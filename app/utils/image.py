@@ -12,26 +12,15 @@ from config import (
     THUMB_DIR,
     THUMBNAIL_SIZE,
 )
+from db.query import (
+    add_image_entries,
+    delete_image_entry,
+    get_image_entry_by_id,
+    get_registered_image_paths,
+)
 from PIL import Image, ImageEnhance, ImageFilter
-
-
-def _process_and_save(args) -> tuple[Path, Path]:
-    """画像をリサイズしてサムネイルを保存するマルチプロセス対象の関数"""
-    img_path, thumbnail_size, thumb_dir = args
-    try:
-        with Image.open(img_path) as img:
-            img = img.convert("RGB")
-            img.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
-
-            thumb_hash = hashlib.md5(img_path.as_posix().encode("utf-8")).hexdigest()
-            thumb_path = thumb_dir / f"{thumb_hash}_thumbnail.png"
-            thumb_dir.mkdir(exist_ok=True)
-            img.save(thumb_path)
-
-            return (img_path, thumb_path)
-    except Exception as e:
-        print(f"⚠ 失敗: {img_path} → {e}")
-        raise
+from tqdm import tqdm
+from utils.folder import image_link_manager
 
 
 class ImageProcessor:
@@ -40,8 +29,9 @@ class ImageProcessor:
     def __init__(self, thumbnail_size: tuple[int, int] = THUMBNAIL_SIZE):
         self.thumbnail_size = thumbnail_size
 
+    @staticmethod
     def resize_image(
-        self, img_path: Path, size: tuple[int, int], channel: str = "RGBA"
+        img_path: Path, size: tuple[int, int], channel: str = "RGBA"
     ) -> Image.Image:
         """画像を指定サイズにリサイズしたPIL Imageを返す"""
         with Image.open(img_path) as img:
@@ -86,11 +76,6 @@ class ImageProcessor:
         label = ctk.CTkLabel(parent, image=photo, text="")
         label.image = photo  # ガーベジコレクション防止
         return label
-
-    def extract_captured_at(self, img_path: Path) -> datetime:
-        """ファイルの作成日時を抽出してISO形式で返す"""
-        ts = img_path.stat().st_birthtime
-        return datetime.fromtimestamp(ts)
 
 
 class ImageCache:
@@ -139,7 +124,8 @@ class ImageFileManager:
         self.thumb_dir = thumb_dir
         self.supported_formats = SUPPORTED_FORMATS
 
-    def _hash_path(self, path: Path) -> str:
+    @staticmethod
+    def hash_path(path: Path) -> str:
         """パスのハッシュを生成"""
         return hashlib.md5(path.as_posix().encode("utf-8")).hexdigest()
 
@@ -167,14 +153,20 @@ class ImageFileManager:
     def _save_thumbnail(self, img: Image.Image, img_path: Path) -> Path:
         """PIL Imageをサムネイルパスに保存"""
         self.thumb_dir.mkdir(exist_ok=True)
-        thumb_hash = self._hash_path(img_path)
+        thumb_hash = self.hash_path(img_path)
         thumb_path = self.thumb_dir / f"{thumb_hash}_thumbnail.png"
         img.save(thumb_path)
         return thumb_path
 
+    @staticmethod
+    def extract_created_at(img_path: Path) -> datetime:
+        """ファイルの作成日時を抽出してISO形式で返す"""
+        ts = img_path.stat().st_birthtime
+        return datetime.fromtimestamp(ts)
+
     def generate_thumbnails(
         self, image_paths: list[Path], processor: ImageProcessor
-    ) -> list[tuple[Path, Path]]:
+    ) -> list[tuple[Path, Path, datetime]]:
         """画像をサムネイルとして並列リサイズ＆保存"""
         args = [
             (path, processor.thumbnail_size, self.thumb_dir) for path in image_paths
@@ -191,6 +183,22 @@ class ImageFileManager:
                     path.unlink()
             except Exception as e:
                 print(f"[Error] ファイル削除失敗: {path} -> {e}")
+
+
+def _process_and_save(args) -> tuple[Path, Path, datetime]:
+    """画像をリサイズしてサムネイルを保存するマルチプロセス対象の関数"""
+    img_path, thumbnail_size, thumb_dir = args
+    try:
+        img = ImageProcessor.resize_image(img_path, thumbnail_size)  # リサイズ処理
+        thumb_hash = ImageFileManager.hash_path(img_path)
+        thumb_path = thumb_dir / f"{thumb_hash}_thumbnail.png"
+        thumb_dir.mkdir(exist_ok=True)
+        img.save(thumb_path)
+        created_at = ImageFileManager.extract_created_at(img_path)
+        return (img_path, thumb_path, created_at)
+    except Exception as e:
+        print(f"⚠ 失敗: {img_path} → {e}")
+        raise
 
 
 class ImageManager:
@@ -223,21 +231,47 @@ class ImageManager:
         """未登録画像を検索"""
         return self.file_manager.find_unregistered_images(registered)
 
-    def generate_thumbnails(self, image_paths: list[Path]) -> list[tuple[Path, Path]]:
+    def generate_thumbnails(
+        self, image_paths: list[Path]
+    ) -> list[tuple[Path, Path, datetime]]:
         """サムネイル生成"""
         return self.file_manager.generate_thumbnails(image_paths, self.processor)
 
-    def extract_captured_at(self, img_path: Path) -> datetime:
+    def extract_created_at(self, img_path: Path) -> datetime:
         """画像のキャプチャ日時を抽出"""
-        return self.processor.extract_captured_at(img_path)
+        return self.file_manager.extract_created_at(img_path)
 
-    def delete_image_files(self, image_path: Path, thumbnail_path: Path) -> None:
+    def delete_image_files(self, image_id: int) -> None:
         """画像ファイル削除"""
-        self.file_manager.delete_image_files(image_path, thumbnail_path)
+        image_entry = get_image_entry_by_id(image_id)
+        if delete_image_entry(image_id):
+            print(f"✅ 画像ID {image_id} のエントリを削除しました。")
+            self.file_manager.delete_image_files(
+                Path(image_entry.image_path), Path(image_entry.thumbnail_path)
+            )
 
     def clear_cache(self):
         """キャッシュクリア"""
         self.cache.clear_cache()
+
+    def register_new_images(self, is_first_run: bool = True):
+        registered = get_registered_image_paths()
+        if not registered or not is_first_run:
+            print("画像フォルダを選択してください。")
+            selected_folder = image_link_manager.select_image_folder()
+            if selected_folder:
+                image_link_manager.create_symlink(selected_folder)
+        unregistered = image_manager.find_unregistered_images(registered)
+        if not unregistered:
+            print("✅ 新しい画像はありません。")
+            return
+        print("🖼 サムネイル画像の生成中...")
+        image_paths = image_manager.generate_thumbnails(tqdm(unregistered))
+
+        print(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
+        add_image_entries(tqdm(image_paths))
+
+        print("✅ 新しい画像を登録しました。")
 
 
 image_manager = ImageManager()

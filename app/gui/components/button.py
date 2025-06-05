@@ -48,6 +48,7 @@ def _create_button(
     parent: ctk.CTkBaseClass,
     text: str,
     command: callable,
+    fg_color: str = "#1f6aa5",
 ) -> ctk.CTkButton:
     return ctk.CTkButton(
         parent,
@@ -55,6 +56,7 @@ def _create_button(
         text_color="white",
         font=CTkFont(weight="bold"),
         command=command,
+        fg_color=fg_color,
     )
 
 
@@ -66,6 +68,15 @@ def create_toggle_favorites_button(
         parent,
         text=text,
         command=command,
+    )
+
+
+def create_add_button(parent: ctk.CTkBaseClass, command: callable) -> ctk.CTkButton:
+    return _create_button(
+        parent,
+        text="＋ 新規追加",
+        command=command,
+        fg_color="#3a7",  # 任意の色
     )
 
 

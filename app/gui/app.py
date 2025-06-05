@@ -6,6 +6,7 @@ from config import THUMBNAIL_SIZE
 from db.models import ImageEntry
 from gui.base import BaseWindow
 from gui.components.button import (
+    create_add_button,
     create_next_button,
     create_prev_button,
     create_toggle_favorites_button,
@@ -13,6 +14,7 @@ from gui.components.button import (
 from gui.original import Original
 from gui.thumbnail import ImageThumbnail
 from gui.viewmodel import GalleryViewModel
+from utils.image import image_manager
 
 
 class App(BaseWindow):
@@ -29,7 +31,7 @@ class App(BaseWindow):
 
         self.viewmodel = GalleryViewModel()
 
-        self._setup_toggle_button()
+        self._setup_header_buttons()
         self._setup_pagination_controls()
         self._setup_scrollable_canvas()
         self.bind("<Configure>", self._on_resize)
@@ -38,11 +40,24 @@ class App(BaseWindow):
 
     # ---------------- UI SETUP ----------------
 
-    def _setup_toggle_button(self):
-        self.toggle_button = create_toggle_favorites_button(
-            self, self.viewmodel.show_favorites_only, self._on_toggle_favorites
+    def _setup_header_buttons(self):
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=(10, 0), padx=10, anchor="nw")
+
+        self.add_button = create_add_button(
+            button_frame,
+            command=self._on_add_images,
         )
-        self.toggle_button.pack(pady=(10, 0), padx=10, anchor="nw")
+        self.add_button.pack(side="left", padx=(0, 10))
+
+        self.toggle_button = create_toggle_favorites_button(
+            button_frame, self.viewmodel.show_favorites_only, self._on_toggle_favorites
+        )
+        self.toggle_button.pack(side="left")
+
+    def _on_add_images(self):
+        image_manager.register_new_images(is_first_run=False)
+        self._load_images()
 
     def _setup_pagination_controls(self):
         self.pagination_frame = ctk.CTkFrame(self)
@@ -212,9 +227,3 @@ class App(BaseWindow):
         new_columns = self._calculate_columns()
         if new_columns != self.current_columns:
             self._load_images()
-
-    def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
-
-    def _on_mousewheel_linux(self, event):
-        self.canvas.yview_scroll(-1 if event.num == 4 else 1, "units")

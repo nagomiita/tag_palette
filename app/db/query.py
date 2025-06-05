@@ -1,11 +1,11 @@
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Generator
 
 from db.engine import engine
 from db.models import ImageEntry
 from sqlalchemy.orm import Session
-from utils.image import image_manager
 
 # ---------------------------- Session Management ----------------------------
 
@@ -24,7 +24,7 @@ def get_session() -> Generator[Session, None, None]:
 
 def get_all_image_entries() -> list[ImageEntry]:
     with get_session() as session:
-        return session.query(ImageEntry).order_by(ImageEntry.id).all()
+        return session.query(ImageEntry).order_by(ImageEntry.id.desc()).all()
 
 
 def get_favorite_image_entries() -> list[ImageEntry]:
@@ -80,15 +80,15 @@ def add_image_entry(image_path: Path, thumbnail_path: Path) -> None:
         session.commit()
 
 
-def add_image_entries(entries: list[tuple[Path, Path]]) -> None:
+def add_image_entries(entries: list[tuple[Path, Path, datetime]]) -> None:
     with get_session() as session:
         image_objects = [
             ImageEntry(
                 image_path=str(orig),
                 thumbnail_path=str(thumb),
-                created_at=image_manager.extract_captured_at(orig),
+                created_at=created_at,
             )
-            for orig, thumb in entries
+            for orig, thumb, created_at in entries
         ]
         session.add_all(image_objects)
         session.commit()
@@ -98,7 +98,6 @@ def delete_image_entry(image_id: int) -> bool:
     with get_session() as session:
         entry = session.query(ImageEntry).filter_by(id=image_id).first()
         if entry:
-            image_manager.delete_image_files(entry.image_path, entry.thumbnail_path)
             session.delete(entry)
             session.commit()
             return True
