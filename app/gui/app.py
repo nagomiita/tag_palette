@@ -5,12 +5,7 @@ import customtkinter as ctk
 from config import THUMBNAIL_SIZE
 from db.models import ImageEntry
 from gui.base import BaseWindow
-from gui.components.button import (
-    create_add_button,
-    create_next_button,
-    create_prev_button,
-    create_toggle_favorites_button,
-)
+from gui.components.button import create_button
 from gui.original import Original
 from gui.thumbnail import ImageThumbnail
 from gui.viewmodel import GalleryViewModel
@@ -44,14 +39,19 @@ class App(BaseWindow):
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(pady=(10, 0), padx=10, anchor="nw")
 
-        self.add_button = create_add_button(
-            button_frame,
+        self.add_button = create_button(
+            parent=button_frame,
+            text="＋ 新規追加",
             command=self._on_add_images,
+            fg_color="#3a7",
         )
         self.add_button.pack(side="left", padx=(0, 10))
+        text = (
+            "すべて表示" if self.viewmodel.show_favorites_only else "お気に入りのみ表示"
+        )
 
-        self.toggle_button = create_toggle_favorites_button(
-            button_frame, self.viewmodel.show_favorites_only, self._on_toggle_favorites
+        self.toggle_button = create_button(
+            parent=button_frame, text=text, command=self._on_toggle_favorites
         )
         self.toggle_button.pack(side="left")
 
@@ -63,15 +63,15 @@ class App(BaseWindow):
         self.pagination_frame = ctk.CTkFrame(self)
         self.pagination_frame.pack(side="bottom", pady=10)
 
-        self.prev_button = create_prev_button(
-            self.pagination_frame, command=self._prev_page
+        self.prev_button = create_button(
+            self.pagination_frame, text="< Prev", command=self._prev_page
         )
         self.page_entry = ctk.CTkEntry(self.pagination_frame, width=40)
         self.page_entry.bind("<Return>", self._go_to_page)
 
         self.total_label = ctk.CTkLabel(self.pagination_frame, text="/ ?")
-        self.next_button = create_next_button(
-            self.pagination_frame, command=self._next_page
+        self.next_button = create_button(
+            self.pagination_frame, text="Next >", command=self._next_page
         )
 
         self.prev_button.pack(side="left", padx=10)

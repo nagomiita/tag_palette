@@ -44,7 +44,7 @@ def create_favorite_button(
     )
 
 
-def _create_button(
+def create_button(
     parent: ctk.CTkBaseClass,
     text: str,
     command: callable,
@@ -57,42 +57,4 @@ def _create_button(
         font=CTkFont(weight="bold"),
         command=command,
         fg_color=fg_color,
-    )
-
-
-def create_toggle_favorites_button(
-    parent: ctk.CTkBaseClass, show_favorites_only: bool, command: callable
-) -> ctk.CTkButton:
-    text = "すべて表示" if show_favorites_only else "お気に入りのみ表示"
-    return _create_button(
-        parent,
-        text=text,
-        command=command,
-    )
-
-
-def create_add_button(parent: ctk.CTkBaseClass, command: callable) -> ctk.CTkButton:
-    return _create_button(
-        parent,
-        text="＋ 新規追加",
-        command=command,
-        fg_color="#3a7",  # 任意の色
-    )
-
-
-def create_prev_button(parent: ctk.CTkBaseClass, command: callable) -> ctk.CTkButton:
-    text = "< Prev"
-    return _create_button(
-        parent,
-        text=text,
-        command=command,
-    )
-
-
-def create_next_button(parent: ctk.CTkBaseClass, command: callable) -> ctk.CTkButton:
-    text = "Next >"
-    return _create_button(
-        parent,
-        text=text,
-        command=command,
     )
