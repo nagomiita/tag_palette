@@ -248,7 +248,7 @@ class ImageManager:
         """画像のキャプチャ日時を抽出"""
         return self.file_manager.extract_created_at(img_path)
 
-    def delete_image_files(self, image_id: int) -> None:
+    def delete_image_files(self, image_id: int) -> bool:
         """画像ファイル削除"""
         image_entry = get_image_entry_by_id(image_id)
         if delete_image_entry(image_id):
@@ -256,6 +256,8 @@ class ImageManager:
             self.file_manager.delete_image_files(
                 Path(image_entry.image_path), Path(image_entry.thumbnail_path)
             )
+            return True
+        return False
 
     def clear_cache(self):
         """キャッシュクリア"""
