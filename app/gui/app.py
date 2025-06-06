@@ -1,5 +1,6 @@
 from math import ceil
 from pathlib import Path
+from tkinter import messagebox
 
 import customtkinter as ctk
 from config import THUMBNAIL_SIZE
@@ -161,7 +162,10 @@ class App(BaseWindow):
 
     def _show_full_image(self, image_id: int):
         entry = self.viewmodel.get_image_by_id(image_id)
-        if not entry:
+        if not Path(entry.image_path).exists():
+            messagebox.showerror(
+                "エラー", f"画像が見つかりませんでした。\n{entry.image_path}"
+            )
             return
 
         tags = self.viewmodel.get_tags_for_image(image_id)

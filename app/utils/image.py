@@ -37,10 +37,14 @@ class ImageProcessor:
         img_path: Path, size: tuple[int, int], channel: str = "RGBA"
     ) -> Image.Image:
         """画像を指定サイズにリサイズしたPIL Imageを返す"""
-        with Image.open(img_path) as img:
-            img = img.convert(channel)
-            img.thumbnail(size, Image.Resampling.LANCZOS)
-            return img
+        try:
+            with Image.open(img_path) as img:
+                img = img.convert(channel)
+                img.thumbnail(size, Image.Resampling.LANCZOS)
+                return img
+        except FileNotFoundError:
+            logger.error(f"⚠ 失敗:画像の読み込みに失敗しました: {img_path}")
+            raise
 
     def create_thumbnail_with_shadow(
         self, image_path: Path, size: tuple[int, int], shadow_offset: int = 4
@@ -269,10 +273,10 @@ class ImageManager:
             logger.info("✅ 新しい画像はありません。")
             return
         logger.info("🖼 サムネイル画像の生成中...")
-        image_paths = image_manager.generate_thumbnails(tqdm(unregistered))
+        images = image_manager.generate_thumbnails(tqdm(unregistered))
 
-        logger.info(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
-        add_image_entries(tqdm(image_paths))
+        logger.info(f"📥 {len(images)} 件の画像をDBに登録中...")
+        add_image_entries(tqdm(images))
 
         logger.info("✅ 新しい画像を登録しました。")
 
