@@ -44,15 +44,20 @@ class App(BaseWindow):
             parent=button_frame,
             text="＋ 新規追加",
             command=self._on_add_images,
-            fg_color="#3a7",
+            fg_color="#33aa77",
+            hover_color="#1e6144",
         )
         self.add_button.pack(side="left", padx=(0, 10))
-        text = (
-            "すべて表示" if self.viewmodel.show_favorites_only else "お気に入りのみ表示"
+        favorite_text = (
+            "すべて表示" if self.viewmodel.show_favorites_only else "♡のみ表示"
         )
 
         self.toggle_button = create_button(
-            parent=button_frame, text=text, command=self._on_toggle_favorites
+            parent=button_frame,
+            text=favorite_text,
+            command=self._on_toggle_favorites,
+            fg_color="#eb4f74",
+            hover_color="#af3d57",
         )
         self.toggle_button.pack(side="left")
 
@@ -199,9 +204,7 @@ class App(BaseWindow):
     def _on_toggle_favorites(self):
         self.viewmodel.toggle_favorites()
         self.toggle_button.configure(
-            text="すべて表示"
-            if self.viewmodel.show_favorites_only
-            else "お気に入りのみ表示"
+            text="すべて表示" if self.viewmodel.show_favorites_only else "♡のみ表示"
         )
         self.current_page = 0
         self._load_images()

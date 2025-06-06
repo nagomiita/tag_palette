@@ -49,6 +49,7 @@ def create_button(
     text: str,
     command: callable,
     fg_color: str = "#1f6aa5",
+    hover_color: str = "#154264",
 ) -> ctk.CTkButton:
     return ctk.CTkButton(
         parent,
@@ -57,4 +58,5 @@ def create_button(
         font=CTkFont(weight="bold"),
         command=command,
         fg_color=fg_color,
+        hover_color=hover_color,
     )
