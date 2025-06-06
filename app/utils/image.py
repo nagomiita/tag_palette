@@ -14,6 +14,7 @@ from config import (
 )
 from db.query import (
     add_image_entries,
+    add_pose_entry,
     delete_image_entry,
     get_image_entry_by_id,
     get_registered_image_paths,
@@ -22,6 +23,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 from tqdm import tqdm
 from utils.folder import image_link_manager
 from utils.logger import setup_logging
+from utils.pose import process_pose
 
 logger = setup_logging()
 
@@ -278,8 +280,16 @@ class ImageManager:
         images = image_manager.generate_thumbnails(tqdm(unregistered))
 
         logger.info(f"📥 {len(images)} 件の画像をDBに登録中...")
-        add_image_entries(tqdm(images))
+        results = add_image_entries(tqdm(images))
+        with Pool(cpu_count()) as pool:
+            all_pose_results = list(
+                tqdm(pool.imap(process_pose, results), total=len(results))
+            )
 
+        # 結果をフラットにしてDBへ追加
+        for pose_result in all_pose_results:
+            for image_id, vec, is_flipped in pose_result:
+                add_pose_entry(image_id, vec, is_flipped)
         logger.info("✅ 新しい画像を登録しました。")
 
 

@@ -38,10 +38,9 @@ class ReloadHandler(FileSystemEventHandler):
             return
         if os.path.splitext(changed_path)[1] in IGNORE_EXTS:
             return
-
+        if not changed_path.endswith(".py"):
+            return
         for target in self.watch_targets:
-            if not changed_path.endswith(".py"):
-                return
             if os.path.isdir(target):
                 if changed_path.startswith(target + os.sep):
                     print(f"🔁 変更検知: {changed_path} → 再起動")

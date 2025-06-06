@@ -11,6 +11,10 @@ from gui.original import Original
 from gui.thumbnail import ImageThumbnail
 from gui.viewmodel import GalleryViewModel
 from utils.image import image_manager
+from utils.logger import setup_logging
+from utils.pose import search_top_similar_pose_ids
+
+logger = setup_logging()
 
 
 class App(BaseWindow):
@@ -183,7 +187,30 @@ class App(BaseWindow):
             is_fav=is_fav,
             toggle_fav_cb=self._toggle_favorite,
             delete_cb=self._on_delete,
+            show_similar_poses_cb=self.show_similar_poses,
         )
+
+    def show_similar_poses(
+        self, base_entry: ImageEntry, parent_frame: ctk.CTkFrame, top_k=30
+    ):
+        query_vec = self.viewmodel.get_pose_vector(base_entry.id)
+        if query_vec is None:
+            logger.warning("❌ クエリ画像のポーズベクトルがありません")
+            return
+
+        db_vectors = self.viewmodel.load_all_pose_vectors()
+        top_ids = search_top_similar_pose_ids(query_vec, db_vectors, top_k=top_k)
+
+        for image_id in top_ids:
+            entry = self.viewmodel.get_image_by_id(image_id)
+            thumb = ImageThumbnail(
+                parent_frame,
+                entry.id,
+                Path(entry.thumbnail_path),
+                size=(100, 100),
+                click_callback=None,
+            )
+            thumb.pack(padx=10, pady=5, anchor="w")
 
     def _toggle_favorite(self, image_id: int, button: ctk.CTkButton):
         new_state = self.viewmodel.toggle_favorite(image_id)

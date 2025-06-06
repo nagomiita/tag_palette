@@ -9,7 +9,14 @@ from utils.image import image_manager
 
 class Original(BaseToplevel):
     def __init__(
-        self, parent, entry: ImageEntry, tags, is_fav, toggle_fav_cb, delete_cb
+        self,
+        parent,
+        entry: ImageEntry,
+        tags,
+        is_fav,
+        toggle_fav_cb,
+        delete_cb,
+        show_similar_poses_cb=None,
     ):
         super().__init__(parent)
         self.title(Path(entry.image_path).name)
@@ -77,7 +84,5 @@ class Original(BaseToplevel):
         # --- マウスホイールのバインド
         self.enable_mousewheel_scroll(canvas)
 
-        # ダミーのサムネイルを追加
-        for i in range(30):
-            thumb = ctk.CTkLabel(scrollable_frame, text=f"Thumb {i + 1}", anchor="w")
-            thumb.pack(padx=10, pady=5, anchor="w")
+        if show_similar_poses_cb:
+            show_similar_poses_cb(entry, scrollable_frame)
