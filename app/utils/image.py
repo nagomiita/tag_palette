@@ -21,6 +21,9 @@ from db.query import (
 from PIL import Image, ImageEnhance, ImageFilter
 from tqdm import tqdm
 from utils.folder import image_link_manager
+from utils.logger import setup_logging
+
+logger = setup_logging()
 
 
 class ImageProcessor:
@@ -182,7 +185,7 @@ class ImageFileManager:
                 if path.exists():
                     path.unlink()
             except Exception as e:
-                print(f"[Error] ファイル削除失敗: {path} -> {e}")
+                logger.error(f"[Error] ファイル削除失敗: {path} -> {e}")
 
 
 def _process_and_save(args) -> tuple[Path, Path, datetime]:
@@ -197,7 +200,7 @@ def _process_and_save(args) -> tuple[Path, Path, datetime]:
         created_at = ImageFileManager.extract_created_at(img_path)
         return (img_path, thumb_path, created_at)
     except Exception as e:
-        print(f"⚠ 失敗: {img_path} → {e}")
+        logger.error(f"⚠ 失敗: {img_path} → {e}")
         raise
 
 
@@ -245,7 +248,7 @@ class ImageManager:
         """画像ファイル削除"""
         image_entry = get_image_entry_by_id(image_id)
         if delete_image_entry(image_id):
-            print(f"✅ 画像ID {image_id} のエントリを削除しました。")
+            logger.info(f"✅ 画像ID {image_id} のエントリを削除しました。")
             self.file_manager.delete_image_files(
                 Path(image_entry.image_path), Path(image_entry.thumbnail_path)
             )
@@ -257,21 +260,21 @@ class ImageManager:
     def register_new_images(self, is_first_run: bool = True):
         registered = get_registered_image_paths()
         if not registered or not is_first_run:
-            print("画像フォルダを選択してください。")
+            logger.info("画像フォルダを選択してください。")
             selected_folder = image_link_manager.select_image_folder()
             if selected_folder:
                 image_link_manager.create_symlink(selected_folder)
         unregistered = image_manager.find_unregistered_images(registered)
         if not unregistered:
-            print("✅ 新しい画像はありません。")
+            logger.info("✅ 新しい画像はありません。")
             return
-        print("🖼 サムネイル画像の生成中...")
+        logger.info("🖼 サムネイル画像の生成中...")
         image_paths = image_manager.generate_thumbnails(tqdm(unregistered))
 
-        print(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
+        logger.info(f"📥 {len(image_paths)} 件の画像をDBに登録中...")
         add_image_entries(tqdm(image_paths))
 
-        print("✅ 新しい画像を登録しました。")
+        logger.info("✅ 新しい画像を登録しました。")
 
 
 image_manager = ImageManager()

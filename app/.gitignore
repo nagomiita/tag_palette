@@ -16,3 +16,4 @@ thumbnails/
 *dist/
 *build/
 *.exe
+*.log
