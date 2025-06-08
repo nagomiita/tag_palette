@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -36,8 +37,7 @@ class Tag(Base):
     __tablename__ = "tags"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tag = Column(String, unique=True, nullable=False)
-    tag_ja = Column(String)
+    name = Column(String, unique=True, nullable=False)
     genre = Column(String)
     embedding = Column(Text)
     registered_at = Column(DateTime, default=datetime.now)
@@ -72,6 +72,8 @@ class ImageTag(Base):
         Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False
     )
     tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    confidence = Column(Float, nullable=True)  # タグの信頼度スコア（例: 0.932）
+    model_name = Column(String, nullable=True)  # 使ったモデル名（例: "wd14-vit.v2"）
 
     image = relationship("ImageEntry", back_populates="image_tags")
     tag = relationship("Tag", back_populates="image_tags")

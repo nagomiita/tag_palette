@@ -6,9 +6,13 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "customtkinter>=5.2.2",
+    "deepdanbooru==1.0.3",
+    "huggingface-hub==0.28.1",
     "mediapipe>=0.10.21",
     "numpy>=1.26.4",
-    "opencv-python>=4.11.0.86",
+    "onnxruntime-gpu>=1.22.0",
+    "opencv-python-headless>=4.11.0.86",
+    "pandas>=2.3.0",
     "pillow>=11.2.1",
     "scikit-learn>=1.7.0",
     "sqlalchemy>=2.0.41",

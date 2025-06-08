@@ -16,7 +16,7 @@ class Original(BaseToplevel):
         is_fav,
         toggle_fav_cb,
         delete_cb,
-        show_similar_poses_cb=None,
+        show_similar_images_cb=None,
     ):
         super().__init__(parent)
         self.title(Path(entry.image_path).name)
@@ -84,5 +84,5 @@ class Original(BaseToplevel):
         # --- マウスホイールのバインド
         self.enable_mousewheel_scroll(canvas)
 
-        if show_similar_poses_cb:
-            show_similar_poses_cb(entry, scrollable_frame)
+        if show_similar_images_cb:
+            show_similar_images_cb(entry, scrollable_frame)

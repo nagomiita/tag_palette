@@ -187,15 +187,15 @@ class App(BaseWindow):
             is_fav=is_fav,
             toggle_fav_cb=self._toggle_favorite,
             delete_cb=self._on_delete,
-            show_similar_poses_cb=self.show_similar_poses,
+            show_similar_images_cb=self.show_similar_images,
         )
 
-    def show_similar_poses(
+    def show_similar_images(
         self, base_entry: ImageEntry, parent_frame: ctk.CTkFrame, top_k=30
     ):
         query_vec = self.viewmodel.get_pose_vector(base_entry.id)
         if query_vec is None:
-            logger.warning("❌ クエリ画像のポーズベクトルがありません")
+            logger.warning("❌ クエリ画像のベクトルがありません")
             return
 
         db_vectors = self.viewmodel.load_all_pose_vectors()

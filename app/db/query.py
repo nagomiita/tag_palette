@@ -5,7 +5,7 @@ from typing import Generator
 
 import numpy as np
 from db.engine import engine
-from db.models import ImageEntry, Pose
+from db.models import ImageEntry, ImageTag, Pose, Tag
 from sqlalchemy.orm import Session
 
 # ---------------------------- Session Management ----------------------------
@@ -124,7 +124,7 @@ def get_tags_for_image(image_id: int) -> list[str]:
         image = session.query(ImageEntry).filter_by(id=image_id).first()
         if not image:
             return []
-        return ["test"]  # [t.tag.tag for t in image.image_tags]
+        return [t.tag.name for t in image.image_tags]
 
 
 # ---------------------------- Query: Pose ----------------------------
@@ -162,3 +162,27 @@ def load_all_pose_vectors() -> list[tuple[int, np.ndarray]]:
                 vec = np.frombuffer(pose.embedding, dtype=np.float32)
                 vectors.append((pose.image_id, vec))
     return vectors
+
+
+# ---------------------------- Query: Tag ----------------------------
+def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
+    with get_session() as session:
+        for tag_name, score in tags.items():
+            # Check if the tag already exists
+            existing_tag = session.query(Tag).filter_by(name=tag_name).first()
+            if not existing_tag:
+                # If not, create a new Tag entry
+                existing_tag = Tag(name=tag_name)
+                session.add(existing_tag)
+                session.flush()  # ← ID を即確定して取得できるようにする
+
+            # Create new ImageTag record
+            image_tag = ImageTag(
+                image_id=image_id,
+                tag_id=existing_tag.id,
+                confidence=score,
+                model_name=model_name,
+            )
+            session.add(image_tag)
+
+        session.commit()

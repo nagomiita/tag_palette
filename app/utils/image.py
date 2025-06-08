@@ -14,6 +14,7 @@ from config import (
 )
 from db.query import (
     add_image_entries,
+    add_tag_entry,
     delete_image_entry,
     get_image_entry_by_id,
     get_registered_image_paths,
@@ -22,6 +23,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 from tqdm import tqdm
 from utils.folder import image_link_manager
 from utils.logger import setup_logging
+from utils.tagger import TagResult, generate_tags
 
 logger = setup_logging()
 
@@ -279,15 +281,17 @@ class ImageManager:
 
         logger.info(f"📥 {len(images)} 件の画像をDBに登録中...")
         results = add_image_entries(tqdm(images))
-        # all_pose_results = []
-        # for item in tqdm(results, desc="Processing poses"):
-        #     pose_result = process_pose(item)
-        #     all_pose_results.append(pose_result)
+        all_tag_results: list[dict[str, TagResult]] = []
+        for item in tqdm(results, desc="generating tags"):
+            image_id = item[0]
+            tag_result = {}
+            tag_result[image_id] = generate_tags(image_path=item[1])
+            all_tag_results.append(tag_result)
 
-        # # 結果をフラットにしてDBへ追加
-        # for pose_result in all_pose_results:
-        #     for image_id, vec, is_flipped in pose_result:
-        #         add_pose_entry(image_id, vec, is_flipped)
+        # 結果をフラットにしてDBへ追加
+        for tag_result in all_tag_results:
+            for image_id, tags in tag_result.items():
+                add_tag_entry(image_id, tags.model_name, tags.tags)
         logger.info("✅ 新しい画像を登録しました。")
 
 
