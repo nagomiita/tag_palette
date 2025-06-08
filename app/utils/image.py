@@ -281,7 +281,7 @@ class ImageManager:
 
         logger.info(f"📥 {len(images)} 件の画像をDBに登録中...")
         results = add_image_entries(tqdm(images))
-        all_tag_results: list[dict[str, TagResult]] = []
+        all_tag_results: list[dict[str, list[TagResult]]] = []
         for item in tqdm(results, desc="generating tags"):
             image_id = item[0]
             tag_result = {}
@@ -289,9 +289,10 @@ class ImageManager:
             all_tag_results.append(tag_result)
 
         # 結果をフラットにしてDBへ追加
-        for tag_result in all_tag_results:
-            for image_id, tags in tag_result.items():
-                add_tag_entry(image_id, tags.model_name, tags.tags)
+        for tag_results in all_tag_results:
+            for image_id, tag_result in tag_results.items():
+                for result in tag_result:
+                    add_tag_entry(image_id, result.model_name, result.tags)
         logger.info("✅ 新しい画像を登録しました。")
 
 
