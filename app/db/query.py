@@ -132,7 +132,7 @@ def add_pose_entry(image_id: int, vec: np.ndarray, is_flipped: bool):
     with get_session() as session:
         pose = Pose(
             image_id=image_id,
-            pose_embedding=vec.tobytes(),
+            embedding=vec.tobytes(),
             is_flipped=is_flipped,
         )
         session.add(pose)
@@ -143,8 +143,8 @@ def get_pose_vector_by_image_id(image_id: int) -> np.ndarray | None:
     """指定した image_id と flip 状態に一致するポーズベクトルを取得"""
     with get_session() as session:
         pose = session.query(Pose).filter(Pose.image_id == image_id).first()
-        if pose and pose.pose_embedding:
-            return np.frombuffer(pose.pose_embedding, dtype=np.float32)
+        if pose and pose.embedding:
+            return np.frombuffer(pose.embedding, dtype=np.float32)
         return None
 
 
@@ -158,7 +158,7 @@ def load_all_pose_vectors() -> list[tuple[int, np.ndarray]]:
     with get_session() as session:
         poses = session.query(Pose).all()
         for pose in poses:
-            if pose.pose_embedding:
-                vec = np.frombuffer(pose.pose_embedding, dtype=np.float32)
+            if pose.embedding:
+                vec = np.frombuffer(pose.embedding, dtype=np.float32)
                 vectors.append((pose.image_id, vec))
     return vectors

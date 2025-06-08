@@ -56,7 +56,7 @@ class Pose(Base):
     image_id = Column(
         Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False
     )
-    pose_embedding = Column(BLOB, nullable=False)
+    embedding = Column(BLOB, nullable=False)
     is_flipped = Column(Boolean, default=False)
 
     __table_args__ = (UniqueConstraint("image_id", "is_flipped"),)

@@ -281,10 +281,10 @@ class ImageManager:
 
         logger.info(f"📥 {len(images)} 件の画像をDBに登録中...")
         results = add_image_entries(tqdm(images))
-        with Pool(cpu_count()) as pool:
-            all_pose_results = list(
-                tqdm(pool.imap(process_pose, results), total=len(results))
-            )
+        all_pose_results = []
+        for item in tqdm(results, desc="Processing poses"):
+            pose_result = process_pose(item)
+            all_pose_results.append(pose_result)
 
         # 結果をフラットにしてDBへ追加
         for pose_result in all_pose_results:
