@@ -17,3 +17,5 @@ thumbnails/
 *build/
 *.exe
 *.log
+lib/
+models/
