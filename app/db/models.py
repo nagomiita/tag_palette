@@ -26,7 +26,7 @@ class ImageEntry(Base):
     created_at = Column(DateTime)
     registered_at = Column(DateTime, default=datetime.now)
     is_favorite = Column(Boolean, default=False)
-    is_r18 = Column(Boolean, default=False)
+    is_sensitive = Column(Boolean, default=False)
     image_tags = relationship(
         "ImageTag", back_populates="image", cascade="all, delete-orphan"
     )
@@ -41,7 +41,7 @@ class Tag(Base):
     genre = Column(String)
     embedding = Column(Text)
     registered_at = Column(DateTime, default=datetime.now)
-    is_r18 = Column(Boolean, default=False)
+    is_sensitive = Column(Boolean, default=False)
     disable = Column(Boolean, default=False)
 
     image_tags = relationship(

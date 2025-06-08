@@ -19,6 +19,9 @@ class Original(BaseToplevel):
         show_similar_images_cb=None,
     ):
         super().__init__(parent)
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after(100, lambda: self.attributes("-topmost", False))  # 一度解除
         self.title(Path(entry.image_path).name)
 
         # メイン横並び
@@ -51,8 +54,16 @@ class Original(BaseToplevel):
         right_frame = ctk.CTkFrame(container)
         right_frame.pack(side="left", fill="both", expand=True, padx=(10, 10), pady=10)
 
+        # タグラベル作成（初期値は仮で600）
         tag_label = ctk.CTkLabel(right_frame, text=" ".join(tags), wraplength=600)
         tag_label.pack(anchor="w", padx=10, pady=(0, 10))
+
+        # 幅に合わせてwraplengthを更新
+        def update_wraplength(event):
+            new_width = event.width - 20  # パディング分を考慮
+            tag_label.configure(wraplength=max(100, new_width))  # 最小幅100で制限
+
+        right_frame.bind("<Configure>", update_wraplength)
 
         # ギャラリー用Canvas + Scrollbar
         canvas_container = ctk.CTkFrame(right_frame)
@@ -85,4 +96,6 @@ class Original(BaseToplevel):
         self.enable_mousewheel_scroll(canvas)
 
         if show_similar_images_cb:
-            show_similar_images_cb(entry, scrollable_frame)
+            scrollable_frame.after(
+                100, lambda: show_similar_images_cb(entry, scrollable_frame)
+            )

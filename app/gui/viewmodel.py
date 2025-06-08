@@ -1,8 +1,7 @@
 from db.models import ImageEntry
 from db.query import (
-    get_all_image_entries,
     get_favorite_flag,
-    get_favorite_image_entries,
+    get_filtered_image_entries,
     get_image_entry_by_id,
     get_image_tag_embedding,
     get_tags_for_image,
@@ -14,21 +13,29 @@ from utils.image import image_manager
 
 class GalleryViewModel:
     def __init__(self):
-        self._show_favorites_only = False
         self._entries: list[ImageEntry] = []
+        self._show_favorites_only: bool = False
+        self._show_sensitive: bool = False
 
     @property
     def show_favorites_only(self):
         return self._show_favorites_only
 
+    @property
+    def show_sensitive(self):
+        return self._show_sensitive
+
     def toggle_favorites(self):
         self._show_favorites_only = not self._show_favorites_only
 
-    def get_entries(self):
-        self._entries = (
-            get_favorite_image_entries()
-            if self._show_favorites_only
-            else get_all_image_entries()
+    def toggle_sensitive(self):
+        self._show_sensitive = not self._show_sensitive
+
+    def get_entries(
+        self, favorites_only: bool = False, include_sensitive: bool = False
+    ):
+        self._entries = get_filtered_image_entries(
+            favorites_only=favorites_only, include_sensitive=include_sensitive
         )
         return self._entries
 
@@ -51,8 +58,8 @@ class GalleryViewModel:
     def get_image_tag_embedding(self, image_id):
         return get_image_tag_embedding(image_id)
 
-    def load_all_image_tag_embedding(self):
-        return load_all_image_tag_embedding()
+    def load_all_image_tag_embedding(self, image_id):
+        return load_all_image_tag_embedding(image_id, self._show_sensitive)
 
 
 class ImageThumbnailViewModel:

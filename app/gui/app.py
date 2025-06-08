@@ -52,22 +52,24 @@ class App(BaseWindow):
             hover_color="#1e6144",
         )
         self.add_button.pack(side="left", padx=(0, 10))
-        favorite_text = (
-            "すべて表示" if self.viewmodel.show_favorites_only else "♡のみ表示"
-        )
 
         self.toggle_button = create_button(
             parent=button_frame,
-            text=favorite_text,
+            text="すべて表示" if self.viewmodel.show_favorites_only else "♡のみ表示",
             command=self._on_toggle_favorites,
             fg_color="#eb4f74",
             hover_color="#af3d57",
         )
-        self.toggle_button.pack(side="left")
+        self.toggle_button.pack(side="left", padx=(0, 10))
 
-    def _on_add_images(self):
-        image_manager.register_new_images(is_first_run=False)
-        self._load_images()
+        self.sensitive_toggle_button = create_button(
+            parent=button_frame,
+            text="Sを非表示" if self.viewmodel.show_sensitive else "Sを表示",
+            command=self._on_toggle_sensitive,
+            fg_color="#a370f7",
+            hover_color="#6c4fc2",
+        )
+        self.sensitive_toggle_button.pack(side="left")
 
     def _setup_pagination_controls(self):
         self.pagination_frame = ctk.CTkFrame(self)
@@ -111,7 +113,10 @@ class App(BaseWindow):
     # ---------------- IMAGE LOADING ----------------
 
     def _load_images(self):
-        self.entries = self.viewmodel.get_entries()
+        self.entries = self.viewmodel.get_entries(
+            favorites_only=self.viewmodel.show_favorites_only,
+            include_sensitive=self.viewmodel.show_sensitive,
+        )
         self.total_pages = ceil(len(self.entries) / self.page_size)
         self.current_columns = self._calculate_columns()
         self._draw_page()
@@ -198,19 +203,29 @@ class App(BaseWindow):
             logger.warning("❌ クエリ画像のベクトルがありません")
             return
 
-        db_vectors = self.viewmodel.load_all_image_tag_embedding()
+        db_vectors = self.viewmodel.load_all_image_tag_embedding(base_entry.id)
         top_ids = search_top_similar_pose_ids(query_vec, db_vectors, top_k=top_k)
 
-        for image_id in top_ids:
+        # 1. フレームの幅を取得（更新を確実に反映させるために update を呼ぶ）
+        parent_frame.update_idletasks()
+        frame_width = parent_frame.winfo_width()
+
+        # 2. サムネイルサイズと余白から1行の表示可能数を計算
+        thumb_width = 150 + 5 * 2  # 幅 + padx左右
+        max_columns = max(1, frame_width // thumb_width)
+
+        for idx, image_id in enumerate(top_ids):
             entry = self.viewmodel.get_image_by_id(image_id)
             thumb = ImageThumbnail(
                 parent_frame,
                 entry.id,
                 Path(entry.thumbnail_path),
-                size=(100, 100),
-                click_callback=None,
+                size=(150, 150),
+                click_callback=self._show_full_image,
             )
-            thumb.pack(padx=10, pady=5, anchor="w")
+            row = idx // max_columns
+            col = idx % max_columns
+            thumb.grid(row=row, column=col, padx=10, pady=10)
 
     def _toggle_favorite(self, image_id: int, button: ctk.CTkButton):
         new_state = self.viewmodel.toggle_favorite(image_id)
@@ -227,6 +242,9 @@ class App(BaseWindow):
             self._load_images()
 
     # ---------------- EVENTS ----------------
+    def _on_add_images(self):
+        image_manager.register_new_images(is_first_run=False)
+        self._load_images()
 
     def _on_toggle_favorites(self):
         self.viewmodel.toggle_favorites()
@@ -234,6 +252,13 @@ class App(BaseWindow):
             text="すべて表示" if self.viewmodel.show_favorites_only else "♡のみ表示"
         )
         self.current_page = 0
+        self._load_images()
+
+    def _on_toggle_sensitive(self):
+        self.viewmodel.toggle_sensitive()
+        self.sensitive_toggle_button.configure(
+            text="🔞を非表示" if self.viewmodel.show_sensitive else "🔞を表示"
+        )
         self._load_images()
 
     def _prev_page(self):

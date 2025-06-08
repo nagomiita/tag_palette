@@ -7,6 +7,7 @@ import numpy as np
 from db.engine import engine
 from db.models import ImageEntry, ImageTag, Pose, Tag
 from sqlalchemy.orm import Session
+from tag_config import SENSITIVE_KEYWORDS
 
 # ---------------------------- Session Management ----------------------------
 
@@ -23,19 +24,16 @@ def get_session() -> Generator[Session, None, None]:
 # ---------------------------- Query: Fetch Entries ----------------------------
 
 
-def get_all_image_entries() -> list[ImageEntry]:
+def get_filtered_image_entries(
+    favorites_only: bool = False, include_sensitive: bool = True
+) -> list[ImageEntry]:
     with get_session() as session:
-        return session.query(ImageEntry).order_by(ImageEntry.id.desc()).all()
-
-
-def get_favorite_image_entries() -> list[ImageEntry]:
-    with get_session() as session:
-        return (
-            session.query(ImageEntry)
-            .filter_by(is_favorite=True)
-            .order_by(ImageEntry.id)
-            .all()
-        )
+        query = session.query(ImageEntry)
+        if favorites_only:
+            query = query.filter(ImageEntry.is_favorite.is_(True))
+        if not include_sensitive:
+            query = query.filter(ImageEntry.is_sensitive.is_(False))
+        return query.order_by(ImageEntry.id.desc()).all()
 
 
 def get_image_entry_by_id(image_id: int) -> ImageEntry | None:
@@ -173,18 +171,30 @@ def get_tags_for_image(image_id: int) -> list[str]:
         return [t.tag.name for t in image.image_tags]
 
 
+def is_sensitive(tag: str) -> bool:
+    if tag.lower() in SENSITIVE_KEYWORDS:
+        return True
+    return False
+
+
 def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
     with get_session() as session:
+        any_sensitive = False
+
         for tag_name, score in tags.items():
-            # Check if the tag already exists
             existing_tag = session.query(Tag).filter_by(name=tag_name).first()
             if not existing_tag:
-                # If not, create a new Tag entry
-                existing_tag = Tag(name=tag_name)
+                sensitive = is_sensitive(tag_name)
+                existing_tag = Tag(name=tag_name, is_sensitive=sensitive)
                 session.add(existing_tag)
                 session.flush()
+            else:
+                sensitive = existing_tag.is_sensitive
 
-            # Create new ImageTag record
+            if sensitive:
+                any_sensitive = True
+
+            # ImageTag を登録
             image_tag = ImageTag(
                 image_id=image_id,
                 tag_id=existing_tag.id,
@@ -193,7 +203,11 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
             )
             session.add(image_tag)
 
-        session.commit()
+        if any_sensitive:
+            image_entry = session.query(ImageEntry).get(image_id)
+            if image_entry:
+                image_entry.is_sensitive = True
+                session.commit()
 
 
 def _parse_embedding(vec_str: str) -> np.ndarray:
@@ -208,11 +222,19 @@ def get_image_tag_embedding(image_id: int) -> np.ndarray | None:
         return None
 
 
-def load_all_image_tag_embedding() -> list[tuple[int, np.ndarray]]:
+def load_all_image_tag_embedding(
+    exclude_id: int | None = None, show_sensitive: bool = True
+) -> list[tuple[int, np.ndarray]]:
     with get_session() as session:
-        entries = (
-            session.query(ImageEntry.id, ImageEntry.tag_embedding)
-            .filter(ImageEntry.tag_embedding.isnot(None))
-            .all()
+        query = session.query(ImageEntry.id, ImageEntry.tag_embedding).filter(
+            ImageEntry.tag_embedding.isnot(None)
         )
+
+        if exclude_id is not None:
+            query = query.filter(ImageEntry.id != exclude_id)
+
+        if not show_sensitive:
+            query = query.filter(ImageEntry.is_sensitive.is_(False))
+
+        entries = query.all()
         return [(image_id, _parse_embedding(vec_str)) for image_id, vec_str in entries]
