@@ -5,6 +5,7 @@
 ```bash
 cd app
 uv sync
+python -m ensurepip
 ```
 
 ## ビルド方法

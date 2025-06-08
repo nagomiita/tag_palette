@@ -118,13 +118,13 @@ def delete_image_entry(image_id: int) -> bool:
     return False
 
 
-# ---------------------------- Query: Tag ----------------------------
-def get_tags_for_image(image_id: int) -> list[str]:
+def update_image_embedding(image_id: int, embedding: np.ndarray):
+    vec_str = ",".join(map(str, embedding.tolist()))
     with get_session() as session:
-        image = session.query(ImageEntry).filter_by(id=image_id).first()
-        if not image:
-            return []
-        return [t.tag.name for t in image.image_tags]
+        image = session.query(ImageEntry).get(image_id)
+        if image:
+            image.tag_embedding = vec_str
+            session.commit()
 
 
 # ---------------------------- Query: Pose ----------------------------
@@ -165,6 +165,14 @@ def load_all_pose_vectors() -> list[tuple[int, np.ndarray]]:
 
 
 # ---------------------------- Query: Tag ----------------------------
+def get_tags_for_image(image_id: int) -> list[str]:
+    with get_session() as session:
+        image = session.query(ImageEntry).filter_by(id=image_id).first()
+        if not image:
+            return []
+        return [t.tag.name for t in image.image_tags]
+
+
 def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
     with get_session() as session:
         for tag_name, score in tags.items():
@@ -174,7 +182,7 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
                 # If not, create a new Tag entry
                 existing_tag = Tag(name=tag_name)
                 session.add(existing_tag)
-                session.flush()  # ← ID を即確定して取得できるようにする
+                session.flush()
 
             # Create new ImageTag record
             image_tag = ImageTag(
@@ -186,3 +194,25 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
             session.add(image_tag)
 
         session.commit()
+
+
+def _parse_embedding(vec_str: str) -> np.ndarray:
+    return np.array(list(map(float, vec_str.split(","))))
+
+
+def get_image_tag_embedding(image_id: int) -> np.ndarray | None:
+    with get_session() as session:
+        entry = session.get(ImageEntry, image_id)
+        if entry and entry.tag_embedding:
+            return _parse_embedding(entry.tag_embedding)
+        return None
+
+
+def load_all_image_tag_embedding() -> list[tuple[int, np.ndarray]]:
+    with get_session() as session:
+        entries = (
+            session.query(ImageEntry.id, ImageEntry.tag_embedding)
+            .filter(ImageEntry.tag_embedding.isnot(None))
+            .all()
+        )
+        return [(image_id, _parse_embedding(vec_str)) for image_id, vec_str in entries]

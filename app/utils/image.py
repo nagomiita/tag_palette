@@ -18,12 +18,15 @@ from db.query import (
     delete_image_entry,
     get_image_entry_by_id,
     get_registered_image_paths,
+    update_image_embedding,
 )
 from PIL import Image, ImageEnhance, ImageFilter
 from tqdm import tqdm
 from utils.folder import image_link_manager
 from utils.logger import setup_logging
 from utils.tagger import TagResult, generate_tags
+
+from .tag_embedding import tag_result_to_embedding
 
 logger = setup_logging()
 
@@ -288,11 +291,12 @@ class ImageManager:
             tag_result[image_id] = generate_tags(image_path=item[1])
             all_tag_results.append(tag_result)
 
-        # 結果をフラットにしてDBへ追加
         for tag_results in all_tag_results:
             for image_id, tag_result in tag_results.items():
                 for result in tag_result:
                     add_tag_entry(image_id, result.model_name, result.tags)
+                    embedding = tag_result_to_embedding(result.tags)
+                    update_image_embedding(image_id, embedding)
         logger.info("✅ 新しい画像を登録しました。")
 
 

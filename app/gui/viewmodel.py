@@ -4,9 +4,9 @@ from db.query import (
     get_favorite_flag,
     get_favorite_image_entries,
     get_image_entry_by_id,
-    get_pose_vector_by_image_id,
+    get_image_tag_embedding,
     get_tags_for_image,
-    load_all_pose_vectors,
+    load_all_image_tag_embedding,
     toggle_favorite_flag,
 )
 from utils.image import image_manager
@@ -48,11 +48,11 @@ class GalleryViewModel:
         """Fetch tags associated with a specific image."""
         return get_tags_for_image(image_id)
 
-    def get_pose_vector(self, image_id):
-        return get_pose_vector_by_image_id(image_id)
+    def get_image_tag_embedding(self, image_id):
+        return get_image_tag_embedding(image_id)
 
-    def load_all_pose_vectors(self):
-        return load_all_pose_vectors()
+    def load_all_image_tag_embedding(self):
+        return load_all_image_tag_embedding()
 
 
 class ImageThumbnailViewModel:

@@ -193,12 +193,12 @@ class App(BaseWindow):
     def show_similar_images(
         self, base_entry: ImageEntry, parent_frame: ctk.CTkFrame, top_k=30
     ):
-        query_vec = self.viewmodel.get_pose_vector(base_entry.id)
+        query_vec = self.viewmodel.get_image_tag_embedding(base_entry.id)
         if query_vec is None:
             logger.warning("❌ クエリ画像のベクトルがありません")
             return
 
-        db_vectors = self.viewmodel.load_all_pose_vectors()
+        db_vectors = self.viewmodel.load_all_image_tag_embedding()
         top_ids = search_top_similar_pose_ids(query_vec, db_vectors, top_k=top_k)
 
         for image_id in top_ids:
