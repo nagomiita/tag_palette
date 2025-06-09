@@ -10,9 +10,9 @@ from gui.components.button import create_button
 from gui.original import Original
 from gui.thumbnail import ImageThumbnail
 from gui.viewmodel import GalleryViewModel
+from utils.embedding import get_similar_image_ids
 from utils.image import image_manager
 from utils.logger import setup_logging
-from utils.pose import search_top_similar_pose_ids
 
 logger = setup_logging()
 
@@ -198,20 +198,13 @@ class App(BaseWindow):
     def show_similar_images(
         self, base_entry: ImageEntry, parent_frame: ctk.CTkFrame, top_k=30
     ):
-        query_vec = self.viewmodel.get_image_tag_embedding(base_entry.id)
-        if query_vec is None:
-            logger.warning("❌ クエリ画像のベクトルがありません")
-            return
-
-        db_vectors = self.viewmodel.load_all_image_tag_embedding(base_entry.id)
-        top_ids = search_top_similar_pose_ids(query_vec, db_vectors, top_k=top_k)
-
+        top_ids = get_similar_image_ids(base_entry.id, self.viewmodel.show_sensitive)
         # 1. フレームの幅を取得（更新を確実に反映させるために update を呼ぶ）
         parent_frame.update_idletasks()
         frame_width = parent_frame.winfo_width()
 
         # 2. サムネイルサイズと余白から1行の表示可能数を計算
-        thumb_width = 150 + 5 * 2  # 幅 + padx左右
+        thumb_width = 150 + 10 * 2  # 幅 + padx左右
         max_columns = max(1, frame_width // thumb_width)
 
         for idx, image_id in enumerate(top_ids):

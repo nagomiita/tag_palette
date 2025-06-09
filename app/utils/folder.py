@@ -20,12 +20,19 @@ class ImageLinkManager:
 
     def create_symlink(self, target: Path):
         try:
-            link_path = self.image_dir / target.name
-            if link_path.exists() or link_path.is_symlink():
-                print(f"⚠ シンボリックリンクが既に存在: {link_path}")
-                return
+            base_name = target.stem
+            ext = target.suffix
+            counter = 1
+            link_path = self.image_dir / (base_name + ext)
+
+            # すでに存在していれば名前をインクリメントして探す
+            while link_path.exists() or link_path.is_symlink():
+                link_path = self.image_dir / f"{base_name}_{counter}{ext}"
+                counter += 1
+
             os.symlink(target, link_path, target_is_directory=True)
             print(f"🔗 シンボリックリンク作成: {link_path} → {target}")
+
         except OSError as e:
             print(f"❌ シンボリックリンク作成失敗: {e}")
             raise

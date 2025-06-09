@@ -3,9 +3,7 @@ from db.query import (
     get_favorite_flag,
     get_filtered_image_entries,
     get_image_entry_by_id,
-    get_image_tag_embedding,
     get_tags_for_image,
-    load_all_image_tag_embedding,
     toggle_favorite_flag,
 )
 from utils.image import image_manager
@@ -54,12 +52,6 @@ class GalleryViewModel:
     def get_tags_for_image(self, image_id):
         """Fetch tags associated with a specific image."""
         return get_tags_for_image(image_id)
-
-    def get_image_tag_embedding(self, image_id):
-        return get_image_tag_embedding(image_id)
-
-    def load_all_image_tag_embedding(self, image_id):
-        return load_all_image_tag_embedding(image_id, self._show_sensitive)
 
 
 class ImageThumbnailViewModel:

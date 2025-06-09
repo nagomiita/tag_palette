@@ -20,15 +20,17 @@ from db.query import (
     get_registered_image_paths,
     update_image_embedding,
 )
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFile, ImageFilter
 from tqdm import tqdm
 from utils.folder import image_link_manager
 from utils.logger import setup_logging
 from utils.tagger import TagResult, generate_tags
 
-from .tag_embedding import tag_result_to_embedding
+from .embedding import tag_result_to_embedding
 
 logger = setup_logging()
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class ImageProcessor:
@@ -291,7 +293,8 @@ class ImageManager:
             tag_result[image_id] = generate_tags(image_path=item[1])
             all_tag_results.append(tag_result)
 
-        for tag_results in all_tag_results:
+        logger.info("🖼 DBにタグを登録中...")
+        for tag_results in tqdm(all_tag_results):
             for image_id, tag_result in tag_results.items():
                 for result in tag_result:
                     add_tag_entry(image_id, result.model_name, result.tags)

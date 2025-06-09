@@ -207,11 +207,45 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
             image_entry = session.query(ImageEntry).get(image_id)
             if image_entry:
                 image_entry.is_sensitive = True
-                session.commit()
+        session.commit()
 
 
 def _parse_embedding(vec_str: str) -> np.ndarray:
-    return np.array(list(map(float, vec_str.split(","))))
+    if not vec_str or "," not in vec_str:
+        print("[WARN] 無効な埋め込み文字列です:", vec_str)
+        return np.array([])
+    try:
+        vec = np.array(list(map(float, vec_str.split(","))))
+        return vec
+    except ValueError as e:
+        print(f"[ERROR] ベクトルのパースに失敗: {vec_str} → {e}")
+        return np.array([])
+
+
+def get_tag_embedding(tag_name: str) -> np.ndarray | None:
+    with get_session() as session:
+        entry = session.query(Tag).filter(Tag.name == tag_name).first()
+        if entry and entry.embedding:
+            return _parse_embedding(entry.embedding)
+        return None
+
+
+def add_tag_embedding(tag_name: str, tag_embedding: str):
+    if (
+        not tag_embedding
+        or not isinstance(tag_embedding, str)
+        or "," not in tag_embedding
+    ):
+        print(f"[SKIP] 無効なベクトルは保存しません: {tag_name} → {tag_embedding}")
+        return
+
+    with get_session() as session:
+        tag = session.query(Tag).filter_by(name=tag_name).first()
+        if tag:
+            tag.embedding = tag_embedding
+            session.commit()
+        else:
+            print(f"Tag '{tag_name}' が見つかりませんでした。")
 
 
 def get_image_tag_embedding(image_id: int) -> np.ndarray | None:

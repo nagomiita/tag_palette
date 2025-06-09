@@ -13,13 +13,11 @@ class TagResult:
 
 
 def _image_interrogate(image_path: Path, model_name: str) -> dict[str, float]:
-    """
-    Perform tag prediction using the specified model.
-    """
     interrogator = interrogators[model_name]
     with Image.open(image_path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((512, 512), Image.Resampling.LANCZOS)
         result = interrogator.interrogate(im)
-
     return AbsInterrogator.postprocess_tags(result[1])
 
 
