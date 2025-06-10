@@ -21,6 +21,7 @@ from db.query import (
     update_image_embedding,
 )
 from PIL import Image, ImageEnhance, ImageFile, ImageFilter
+from send2trash import send2trash
 from tqdm import tqdm
 from utils.folder import image_link_manager
 from utils.logger import setup_logging
@@ -194,7 +195,7 @@ class ImageFileManager:
         for path in [image_path, thumbnail_path]:
             try:
                 if path.exists():
-                    path.unlink()
+                    send2trash(str(path))
             except Exception as e:
                 logger.error(f"[Error] ファイル削除失敗: {path} -> {e}")
 
@@ -271,12 +272,15 @@ class ImageManager:
         self.cache.clear_cache()
 
     def register_new_images(self, is_first_run: bool = True):
+        print("登録済みイラスト探索開始")
         registered = get_registered_image_paths()
+        print("登録済みイラスト取得完了")
         if not registered or not is_first_run:
             logger.info("画像フォルダを選択してください。")
             selected_folder = image_link_manager.select_image_folder()
             if selected_folder:
                 image_link_manager.create_symlink(selected_folder)
+        print("未登録イラスト探索開始")
         unregistered = image_manager.find_unregistered_images(registered)
         if not unregistered:
             logger.info("✅ 新しい画像はありません。")
@@ -301,6 +305,31 @@ class ImageManager:
                     embedding = tag_result_to_embedding(result.tags)
                     update_image_embedding(image_id, embedding)
         logger.info("✅ 新しい画像を登録しました。")
+
+    def truncate_filename(self, filename: str, max_length: int = 18) -> str:
+        """ファイル名を指定された長さに制限する
+
+        Args:
+            filename: 元のファイル名
+            max_length: 最大文字数（デフォルト: 18）
+
+        Returns:
+            制限された文字数のファイル名
+        """
+        if len(filename) <= max_length:
+            return filename
+
+        # 拡張子を保持しながら制限
+        path_obj = Path(filename)
+        stem = path_obj.stem
+        suffix = path_obj.suffix
+        max_stem_length = max_length - len(suffix)
+
+        if max_stem_length > 0:
+            return stem[:max_stem_length] + suffix
+        else:
+            # 拡張子が長すぎる場合は全体を制限
+            return filename[:max_length]
 
 
 image_manager = ImageManager()
