@@ -44,11 +44,12 @@ class Original(BaseToplevel):
             command=lambda: toggle_fav_cb(entry.id, fav_button),
         )
         fav_button.place(relx=1.0, rely=1.0, anchor="se", x=-12, y=-12)
-
-        create_delete_button(
-            image_frame,
-            command=lambda: delete_cb(entry.id, self),
-        ).place(relx=0.0, rely=1.0, anchor="sw", x=12, y=-12)
+        if not is_fav:
+            del_button = create_delete_button(
+                image_frame,
+                command=lambda: delete_cb(entry.id, self),
+            )
+            del_button.place(relx=0.0, rely=1.0, anchor="sw", x=12, y=-12)
 
         # ---------------- 右: タグ + ギャラリー ----------------
         right_frame = ctk.CTkFrame(container)

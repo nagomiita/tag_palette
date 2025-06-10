@@ -33,8 +33,9 @@ class ImageThumbnail(ctk.CTkFrame):
         )
         self.favorite_button.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
 
-        delete_button = create_delete_button(self, self._on_delete)
-        delete_button.place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
+        if not is_fav:
+            delete_button = create_delete_button(self, self._on_delete)
+            delete_button.place(relx=0.0, rely=1.0, anchor="sw", x=4, y=-4)
 
     def _bind_events(self):
         if self.click_callback:
