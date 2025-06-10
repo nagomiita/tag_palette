@@ -163,7 +163,11 @@ class App(BaseWindow):
         )
         thumb.pack()
 
-        caption = ctk.CTkLabel(frame, text=Path(entry.image_path).name, font=self.fonts)
+        caption = ctk.CTkLabel(
+            frame,
+            text=image_manager.truncate_filename(Path(entry.image_path).name),
+            font=self.fonts,
+        )
         caption.pack()
 
         return frame
