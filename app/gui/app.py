@@ -202,7 +202,9 @@ class App(BaseWindow):
     def show_similar_images(
         self, base_entry: ImageEntry, parent_frame: ctk.CTkFrame, top_k=30
     ):
-        top_ids = get_similar_image_ids(base_entry.id, self.viewmodel.show_sensitive)
+        top_ids = get_similar_image_ids(
+            base_entry.id, self.viewmodel.show_sensitive, top_k
+        )
         # 1. フレームの幅を取得（更新を確実に反映させるために update を呼ぶ）
         parent_frame.update_idletasks()
         frame_width = parent_frame.winfo_width()
@@ -254,7 +256,7 @@ class App(BaseWindow):
     def _on_toggle_sensitive(self):
         self.viewmodel.toggle_sensitive()
         self.sensitive_toggle_button.configure(
-            text="🔞を非表示" if self.viewmodel.show_sensitive else "🔞を表示"
+            text="Sを非表示" if self.viewmodel.show_sensitive else "Sを表示"
         )
         self._load_images()
 

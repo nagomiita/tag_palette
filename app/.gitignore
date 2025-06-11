@@ -12,6 +12,8 @@ wheels/
 # custom
 images/
 thumbnails/
+images_dev/
+thumbnails_dev/
 *.db
 *dist/
 *build/
