@@ -83,10 +83,14 @@ class ImageProcessor:
     def load_full_image(
         self, parent: ctk.CTkBaseClass, image_path: Path
     ) -> ctk.CTkLabel:
-        """指定された画像を読み込み、ウィンドウに収まるように縮小してラベルとして返す"""
+        """指定された画像を読み込み、最大横幅を制限してラベルとして返す"""
         screen_w = parent.winfo_screenwidth()
         screen_h = parent.winfo_screenheight()
-        img = self.resize_image(image_path, (screen_w - 40, screen_h - 80))
+
+        # 最大サイズを決定（最大横幅を制限）
+        actual_max_width = (screen_w - 40) * 0.8
+        actual_max_height = screen_h - 80
+        img = self.resize_image(image_path, (actual_max_width, actual_max_height))
         photo = ctk.CTkImage(light_image=img, size=(img.width, img.height))
         label = ctk.CTkLabel(parent, image=photo, text="")
         label.image = photo  # ガーベジコレクション防止
