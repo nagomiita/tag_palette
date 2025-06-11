@@ -4,6 +4,7 @@ import customtkinter as ctk
 from db.models import ImageEntry
 from gui.base import BaseToplevel
 from gui.components.button import create_delete_button, create_favorite_button
+from utils.file_operations import FileOperationManager
 from utils.image import image_manager
 
 
@@ -37,6 +38,11 @@ class Original(BaseToplevel):
 
         label = image_manager.load_full_image(image_frame, entry.image_path)
         label.pack(anchor="w")
+
+        # 画像にコピー機能を追加
+        self.entry = entry
+        self.file_ops = FileOperationManager(self)
+        self._setup_image_copy(label)
 
         fav_button = create_favorite_button(
             image_frame,
@@ -100,3 +106,24 @@ class Original(BaseToplevel):
             scrollable_frame.after(
                 100, lambda: show_similar_images_cb(entry, scrollable_frame)
             )
+
+    def _setup_image_copy(self, widget: ctk.CTkLabel):
+        """使用例：簡単なコンテキストメニュー設定"""
+        menu = self.create_context_menu(
+            {
+                "画像をコピー": lambda: self.file_ops.copy_image(self.entry.image_path),
+                "ファイルパスをコピー": lambda: self.file_ops.copy_file_path(
+                    self.entry.image_path
+                ),
+                "---": None,
+                "ファイルを開く": lambda: self.file_ops.open_file(
+                    self.entry.image_path
+                ),
+            }
+        )
+
+        widget.bind("<Button-3>", lambda e: self.show_styled_menu(menu, e))
+        widget.bind(
+            "<Control-c>", lambda e: self.file_ops.copy_image(self.entry.image_path)
+        )
+        widget.focus_set()
