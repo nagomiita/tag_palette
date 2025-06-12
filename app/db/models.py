@@ -27,6 +27,7 @@ class ImageEntry(Base):
     registered_at = Column(DateTime, default=datetime.now)
     is_favorite = Column(Boolean, default=False)
     is_sensitive = Column(Boolean, default=False)
+    view_count = Column(Integer, default=0, nullable=False)
     image_tags = relationship(
         "ImageTag", back_populates="image", cascade="all, delete-orphan"
     )

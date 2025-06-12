@@ -5,6 +5,7 @@ from db.query import (
     get_filtered_image_entries,
     get_image_entry_by_id,
     get_tags_for_image,
+    increment_view_count,
     toggle_favorite_flag,
 )
 from utils.image import image_manager
@@ -40,6 +41,10 @@ class GalleryViewModel:
 
     def get_image_by_id(self, image_id) -> ImageEntry | None:
         return get_image_entry_by_id(image_id)
+
+    def increment_view_count(self, image_id: int) -> None:
+        """Increment the view count for a specific image."""
+        increment_view_count(image_id)
 
     def get_favorite_state(self, image_id) -> bool:
         return get_favorite_flag(image_id)

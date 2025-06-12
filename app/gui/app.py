@@ -204,6 +204,7 @@ class App(BaseWindow):
     # ---------------- FULL VIEW ----------------
 
     def _show_full_image(self, image_id: int):
+        self.viewmodel.increment_view_count(image_id)
         entry = self.viewmodel.get_image_by_id(image_id)
         if not Path(entry.image_path).exists():
             messagebox.showerror(

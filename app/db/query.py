@@ -42,6 +42,14 @@ def get_image_entry_by_id(image_id: int) -> ImageEntry | None:
         return session.query(ImageEntry).filter_by(id=image_id).first()
 
 
+def increment_view_count(image_id: int):
+    with get_session() as session:
+        entry = session.get(ImageEntry, image_id)
+        if entry:
+            entry.view_count += 1
+            session.commit()
+
+
 # ---------------------------- Query: Favorite Flags ----------------------------
 
 
