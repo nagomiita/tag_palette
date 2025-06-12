@@ -8,17 +8,22 @@ from watchdog.observers import Observer
 
 SCRIPT_NAME = "main.py"  # メインスクリプト（再実行対象）
 
-# 監視したいファイルやディレクトリのリスト
-WATCH_TARGETS = ["main.py", "gui/", "db/", "config.py", "utils/"]
+# 監視対象（ファイル・フォルダ）
+WATCH_TARGETS = ["main.py", "gui/", "db/", "utils/"]
 
-# 無視するパスや拡張子
-IGNORE_DIRS = ["__pycache__"]
-IGNORE_EXTS = [".pyc", ".pyo"]
+# 無視対象
+IGNORE_DIRS = ["__pycache__", ".vscode"]
+IGNORE_EXTS = [".pyc", ".pyo", ".swp", ".tmp", ".DS_Store"]
+IGNORE_FILES = [".code-workspace"]
+
+# 再起動の間隔制限（秒）
+RESTART_COOLDOWN = 3.0
 
 
 class ReloadHandler(FileSystemEventHandler):
     def __init__(self):
         self.process = None
+        self.last_restart_time = 0
         self.watch_targets = [os.path.abspath(t) for t in WATCH_TARGETS]
         self.start_app()
 
@@ -28,26 +33,43 @@ class ReloadHandler(FileSystemEventHandler):
             self.process.terminate()
             self.process.wait()
         print("▶️ アプリ再起動中: python", SCRIPT_NAME)
-        self.process = subprocess.Popen([sys.executable, SCRIPT_NAME])
+
+        # 環境変数を設定（既存の環境を継承しつつ APP_ENV を追加）
+        env = os.environ.copy()
+        env["APP_ENV"] = "dev"
+
+        # subprocess に環境変数を渡して dev 起動
+        self.process = subprocess.Popen([sys.executable, SCRIPT_NAME], env=env)
 
     def on_modified(self, event):
         changed_path = os.path.abspath(event.src_path)
 
-        # ⛔ 無視対象かどうかをチェック
-        if any(ignored in changed_path for ignored in IGNORE_DIRS):
+        # 再起動間隔が短すぎる場合は無視
+        if time.time() - self.last_restart_time < RESTART_COOLDOWN:
             return
+
+        # 拡張子・ファイル名・ディレクトリチェック
         if os.path.splitext(changed_path)[1] in IGNORE_EXTS:
+            return
+        if any(part in changed_path for part in IGNORE_DIRS):
+            return
+        if os.path.basename(changed_path) in IGNORE_FILES:
             return
         if not changed_path.endswith(".py"):
             return
+
+        # 対象の監視パスに該当するかチェック
         for target in self.watch_targets:
-            if os.path.isdir(target):
-                if changed_path.startswith(target + os.sep):
+            target_abs = os.path.abspath(target)
+            if os.path.isdir(target_abs):
+                if changed_path.startswith(target_abs + os.sep):
                     print(f"🔁 変更検知: {changed_path} → 再起動")
+                    self.last_restart_time = time.time()
                     self.start_app()
                     break
-            elif changed_path == target:
+            elif changed_path == target_abs:
                 print(f"🔁 変更検知: {changed_path} → 再起動")
+                self.last_restart_time = time.time()
                 self.start_app()
                 break
 
