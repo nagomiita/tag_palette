@@ -41,11 +41,16 @@ class App(BaseWindow):
     # ---------------- UI SETUP ----------------
 
     def _setup_header_buttons(self):
+        # ヘッダー行の親フレーム
         button_frame = ctk.CTkFrame(self)
-        button_frame.pack(pady=(10, 0), padx=10, anchor="nw")
+        button_frame.pack(fill="x", padx=10, pady=(10, 0))  # fill="x"が重要
+
+        # 左側のボタン群を入れるフレーム
+        left_frame = ctk.CTkFrame(button_frame, fg_color="transparent")
+        left_frame.pack(side="left")
 
         self.add_button = create_button(
-            parent=button_frame,
+            parent=left_frame,
             text="＋ 新規追加",
             command=self._on_add_images,
             fg_color="#33aa77",
@@ -54,7 +59,7 @@ class App(BaseWindow):
         self.add_button.pack(side="left", padx=(0, 10))
 
         self.toggle_button = create_button(
-            parent=button_frame,
+            parent=left_frame,
             text="すべて表示" if self.viewmodel.show_favorites_only else "♡のみ表示",
             command=self._on_toggle_favorites,
             fg_color="#eb4f74",
@@ -63,13 +68,33 @@ class App(BaseWindow):
         self.toggle_button.pack(side="left", padx=(0, 10))
 
         self.sensitive_toggle_button = create_button(
-            parent=button_frame,
+            parent=left_frame,
             text="Sを非表示" if self.viewmodel.show_sensitive else "Sを表示",
             command=self._on_toggle_sensitive,
             fg_color="#a370f7",
             hover_color="#6c4fc2",
         )
         self.sensitive_toggle_button.pack(side="left")
+
+        # 右側の検索UIを入れるフレーム（右寄せ）
+        right_frame = ctk.CTkFrame(button_frame, fg_color="transparent")
+        right_frame.pack(side="right")
+
+        self.tag_entry = ctk.CTkEntry(
+            right_frame,
+            placeholder_text="タグを入力",
+            width=160,
+        )
+        self.tag_entry.pack(side="left", padx=(5, 5))
+
+        search_button = create_button(
+            parent=right_frame,
+            text="検索",
+            command=self._on_tag_search,
+            fg_color="#4488ff",
+            hover_color="#3466cc",
+        )
+        search_button.pack(side="left", padx=(0, 10))
 
     def _setup_pagination_controls(self):
         self.pagination_frame = ctk.CTkFrame(self)
@@ -285,3 +310,18 @@ class App(BaseWindow):
         new_columns = self._calculate_columns()
         if new_columns != self.current_columns:
             self._load_images()
+
+    def _on_tag_search(self):
+        keyword = self.tag_entry.get().strip()
+        if not keyword:
+            self._load_images()
+            return
+
+        self.entries = self.viewmodel.get_entries_by_tag(
+            keyword,
+            favorites_only=self.viewmodel.show_favorites_only,
+            include_sensitive=self.viewmodel.show_sensitive,
+        )
+        self.total_pages = ceil(len(self.entries) / self.page_size)
+        self.current_page = 0
+        self._draw_page()

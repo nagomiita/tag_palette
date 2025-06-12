@@ -1,5 +1,6 @@
 from db.models import ImageEntry
 from db.query import (
+    get_entries_by_tag,
     get_favorite_flag,
     get_filtered_image_entries,
     get_image_entry_by_id,
@@ -37,7 +38,7 @@ class GalleryViewModel:
         )
         return self._entries
 
-    def get_image_by_id(self, image_id):
+    def get_image_by_id(self, image_id) -> ImageEntry | None:
         return get_image_entry_by_id(image_id)
 
     def get_favorite_state(self, image_id) -> bool:
@@ -49,9 +50,18 @@ class GalleryViewModel:
     def delete_image(self, image_id) -> bool:
         return image_manager.delete_image_files(image_id)
 
-    def get_tags_for_image(self, image_id):
+    def get_tags_for_image(self, image_id) -> list[str]:
         """Fetch tags associated with a specific image."""
         return get_tags_for_image(image_id)
+
+    def get_entries_by_tag(
+        self,
+        tag_name: str,
+        favorites_only: bool = False,
+        include_sensitive: bool = True,
+    ) -> list[ImageEntry]:
+        """Fetch entries associated with a specific tag."""
+        return get_entries_by_tag(tag_name, favorites_only, include_sensitive)
 
 
 class ImageThumbnailViewModel:

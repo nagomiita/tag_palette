@@ -6,7 +6,8 @@ from typing import Generator
 import numpy as np
 from db.engine import engine
 from db.models import ImageEntry, ImageTag, Pose, Tag
-from sqlalchemy.orm import Session
+from sqlalchemy import false, true
+from sqlalchemy.orm import Session, joinedload
 from tag_config import SENSITIVE_KEYWORDS
 
 # ---------------------------- Session Management ----------------------------
@@ -272,3 +273,25 @@ def load_all_image_tag_embedding(
 
         entries = query.all()
         return [(image_id, _parse_embedding(vec_str)) for image_id, vec_str in entries]
+
+
+def get_entries_by_tag(
+    keyword: str, favorites_only=False, include_sensitive=True
+) -> list[ImageEntry]:
+    with get_session() as session:
+        query = (
+            session.query(ImageEntry)
+            .join(ImageEntry.image_tags)
+            .join(ImageTag.tag)
+            .filter(Tag.name.ilike(f"%{keyword}%"))
+        )
+
+        if favorites_only:
+            query = query.filter(ImageEntry.is_favorite == true())
+        if not include_sensitive:
+            query = query.filter(ImageEntry.is_sensitive == false())
+        query = query.options(
+            joinedload(ImageEntry.image_tags).joinedload(ImageTag.tag)
+        )
+
+        return query.distinct().all()
