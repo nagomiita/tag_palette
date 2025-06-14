@@ -139,7 +139,7 @@ class Original(BaseToplevel):
                 not hasattr(self, "_last_width")
                 or abs(event.width - self._last_width) > 10
             ):
-                self._last_width: int = event.width
+                self._last_width = event.width
                 self._render_tag_buttons(top_frame, tags, event.width - 20)
 
         top_frame.after(50, setup_tags)
