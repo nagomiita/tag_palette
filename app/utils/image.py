@@ -160,6 +160,7 @@ class ImageFileManager:
     def find_unregistered_images(self, registered: set[str]) -> list[Path]:
         """登録されていない画像のパスを探索"""
         unregistered: list[Path] = []
+        print("未登録の画像を探索中...")
         for img_path in self.image_dir.rglob("*"):
             if img_path.is_symlink():  # シンボリックリンク先のシンボリックは無視
                 for child_path in img_path.rglob("*"):
@@ -167,6 +168,7 @@ class ImageFileManager:
                         unregistered.append(child_path)
             elif self._is_valid_image(img_path, registered):
                 unregistered.append(img_path)
+        print(f"未登録の画像数: {len(unregistered)}")
         return unregistered
 
     def _save_thumbnail(self, img: Image.Image, img_path: Path) -> Path:

@@ -6,7 +6,7 @@ from typing import Generator
 import numpy as np
 from db.engine import engine
 from db.models import ImageEntry, ImageTag, Pose, Tag
-from sqlalchemy import false, true
+from sqlalchemy import false, or_, true
 from sqlalchemy.orm import Session, joinedload
 from tag_config import SENSITIVE_KEYWORDS
 
@@ -303,3 +303,112 @@ def get_entries_by_tag(
         )
 
         return query.distinct().all()
+
+
+def get_entries_by_tags(
+    tags: list[str],
+    search_mode: str = "AND",
+    favorites_only: bool = False,
+    include_sensitive: bool = True,
+) -> list[ImageEntry]:
+    """最適化された複数タグ検索
+
+    Args:
+        tags: 検索タグのリスト
+        search_mode: 'AND' または 'OR'
+        favorites_only: お気に入りのみ
+        include_sensitive: センシティブ画像を含む
+
+    Returns:
+        マッチした画像エントリのリスト
+    """
+    with get_session() as session:
+        if search_mode.upper() == "AND":
+            return _search_tags_and_optimized(
+                session, tags, favorites_only, include_sensitive
+            )
+        else:
+            return _search_tags_or_optimized(
+                session, tags, favorites_only, include_sensitive
+            )
+
+
+def _search_tags_and_optimized(
+    session: Session, tags: list[str], favorites_only: bool, include_sensitive: bool
+) -> list[ImageEntry]:
+    """段階的フィルタリングによるAND検索（推奨）"""
+
+    # Step 1: 基本フィルタで画像IDセットを取得
+    candidate_ids = set()
+
+    base_query = session.query(ImageEntry.id)
+    if favorites_only:
+        base_query = base_query.filter(ImageEntry.is_favorite == True)
+    if not include_sensitive:
+        base_query = base_query.filter(ImageEntry.is_sensitive == False)
+
+    candidate_ids = {row[0] for row in base_query.all()}
+
+    if not candidate_ids:
+        return []
+
+    for tag in tags:
+        matched_tag_ids = {
+            row.id
+            for row in session.query(Tag.id).filter(Tag.name.ilike(f"%{tag}%")).all()
+        }
+
+        if not matched_tag_ids:
+            return []
+
+        image_ids = {
+            row.image_id
+            for row in session.query(ImageTag.image_id)
+            .filter(ImageTag.tag_id.in_(matched_tag_ids))
+            .all()
+        }
+
+        candidate_ids &= image_ids
+        if not candidate_ids:
+            return []
+
+    # Step 3: 最終結果を取得
+    return (
+        session.query(ImageEntry)
+        .filter(ImageEntry.id.in_(candidate_ids))
+        .options(joinedload(ImageEntry.image_tags).joinedload(ImageTag.tag))
+        .order_by(ImageEntry.id.desc())
+        .all()
+    )
+
+
+def _search_tags_or_optimized(
+    session: Session, tags: list[str], favorites_only: bool, include_sensitive: bool
+) -> list[ImageEntry]:
+    """最適化されたOR検索：効率的なJOIN"""
+
+    # 基本クエリ
+    query = session.query(ImageEntry)
+
+    # 基本フィルタを先に適用
+    if favorites_only:
+        query = query.filter(ImageEntry.is_favorite == True)
+    if not include_sensitive:
+        query = query.filter(ImageEntry.is_sensitive == False)
+
+    # EXISTS を使った効率的なタグ検索
+    tag_exists = (
+        session.query(ImageTag.image_id)
+        .join(Tag)
+        .filter(
+            ImageTag.image_id == ImageEntry.id,
+            or_(*[Tag.name.ilike(f"%{tag}%") for tag in tags]),
+        )
+        .exists()
+    )
+
+    return (
+        query.filter(tag_exists)
+        .options(joinedload(ImageEntry.image_tags).joinedload(ImageTag.tag))
+        .all()
+    )

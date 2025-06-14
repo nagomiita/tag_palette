@@ -1,3 +1,4 @@
+import time
 from math import ceil
 from pathlib import Path
 from tkinter import messagebox
@@ -313,16 +314,37 @@ class App(BaseWindow):
             self._load_images()
 
     def _on_tag_search(self):
+        """タグ検索の実行（複数タグ対応）"""
         keyword = self.tag_entry.get().strip()
+        print(f"🔍 タグ検索: {keyword}")
+
         if not keyword:
+            messagebox.showinfo("情報", "タグを入力してください。")
             self._load_images()
             return
 
-        self.entries = self.viewmodel.get_entries_by_tag(
-            keyword,
+        tags = [tag.strip() for tag in keyword.split(",") if tag.strip()]
+        if not tags:
+            messagebox.showinfo("情報", "タグを入力してください。")
+            self._load_images()
+            return
+
+        print(f"🔍 検索タグ: {tags}")
+
+        # --- 検索時間の計測開始
+        start_time = time.time()
+
+        self.entries = self.viewmodel.get_entries_by_tags(
+            tags,
+            search_mode="AND",  # または 'OR'
             favorites_only=self.viewmodel.show_favorites_only,
             include_sensitive=self.viewmodel.show_sensitive,
         )
+
+        elapsed = time.time() - start_time
+        print(f"⏱️ 検索時間: {elapsed:.3f}秒")
+        print(f"🔍 検索結果: {len(self.entries)}件")
+
         self.total_pages = ceil(len(self.entries) / self.page_size)
         self.current_page = 0
         self._draw_page()

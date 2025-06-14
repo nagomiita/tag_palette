@@ -1,6 +1,6 @@
 from db.models import ImageEntry
 from db.query import (
-    get_entries_by_tag,
+    get_entries_by_tags,
     get_favorite_flag,
     get_filtered_image_entries,
     get_image_entry_by_id,
@@ -59,14 +59,15 @@ class GalleryViewModel:
         """Fetch tags associated with a specific image."""
         return get_tags_for_image(image_id)
 
-    def get_entries_by_tag(
+    def get_entries_by_tags(
         self,
-        tag_name: str,
+        tags: list[str],
+        search_mode: str = "AND",
         favorites_only: bool = False,
         include_sensitive: bool = True,
     ) -> list[ImageEntry]:
         """Fetch entries associated with a specific tag."""
-        return get_entries_by_tag(tag_name, favorites_only, include_sensitive)
+        return get_entries_by_tags(tags, search_mode, favorites_only, include_sensitive)
 
 
 class ImageThumbnailViewModel:
