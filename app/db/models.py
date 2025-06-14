@@ -40,14 +40,26 @@ class Tag(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
     genre = Column(String)
+    category_id = Column(
+        Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
     embedding = Column(Text)
     registered_at = Column(DateTime, default=datetime.now)
     is_sensitive = Column(Boolean, default=False)
     disable = Column(Boolean, default=False)
-
+    category = relationship("Category", back_populates="tags")
     image_tags = relationship(
         "ImageTag", back_populates="tag", cascade="all, delete-orphan"
     )
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, unique=True, nullable=False)
+
+    tags = relationship("Tag", back_populates="category", cascade="all, delete")
 
 
 class Pose(Base):

@@ -5,7 +5,13 @@ from typing import Generator
 
 import numpy as np
 from db.engine import engine
-from db.models import ImageEntry, ImageTag, Pose, Tag
+from db.models import (  # Baseクラスが定義されたモジュール名に応じて修正
+    Category,
+    ImageEntry,
+    ImageTag,
+    Pose,
+    Tag,
+)
 from sqlalchemy import false, or_, true
 from sqlalchemy.orm import Session, joinedload
 from tag_config import SENSITIVE_KEYWORDS
@@ -20,6 +26,29 @@ def get_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+# ---------------------------- Seed: Add Entries ----------------------------
+
+
+def seed_categories_and_tags():
+    category_definitions = [
+        "pose",
+        "costume",
+        "appearance",
+        "emotion",
+        "composition",
+        "background",
+        "fantasy",
+        "meta",
+    ]
+    with get_session() as session:
+        for cat_name in category_definitions:
+            category = session.query(Category).filter_by(name=cat_name).first()
+            if not category:
+                category = Category(name=cat_name)
+                session.add(category)
+        session.commit()
 
 
 # ---------------------------- Query: Fetch Entries ----------------------------
