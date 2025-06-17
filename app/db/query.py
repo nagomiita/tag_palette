@@ -4,17 +4,21 @@ from pathlib import Path
 from typing import Generator
 
 import numpy as np
+from config import LANGUAGE
 from db.engine import engine
-from db.models import (  # Baseクラスが定義されたモジュール名に応じて修正
+from db.models import (
     Category,
     ImageEntry,
     ImageTag,
     Pose,
     Tag,
+    TagTranslation,
 )
 from sqlalchemy import false, or_, true
 from sqlalchemy.orm import Session, joinedload
 from tag_config import SENSITIVE_KEYWORDS
+from utils.categorize import get_category_tag
+from utils.translations import get_translation_for_tag
 
 # ---------------------------- Session Management ----------------------------
 
@@ -33,6 +37,10 @@ def get_session() -> Generator[Session, None, None]:
 
 def seed_categories_and_tags():
     category_definitions = [
+        "general",
+        "artist",
+        "copyright",
+        "character",
         "pose",
         "costume",
         "appearance",
@@ -201,12 +209,35 @@ def load_all_pose_vectors() -> list[tuple[int, np.ndarray]]:
 
 
 # ---------------------------- Query: Tag ----------------------------
-def get_tags_for_image(image_id: int) -> list[str]:
+def get_all_tags() -> list[Tag]:
+    with get_session() as session:
+        return session.query(Tag).order_by(Tag.name).all()
+
+
+def get_tags_for_image(image_id: int, language: str = "en") -> list[str]:
     with get_session() as session:
         image = session.query(ImageEntry).filter_by(id=image_id).first()
         if not image:
             return []
-        return [t.tag.name for t in image.image_tags]
+
+        tags = []
+        for image_tag in image.image_tags:
+            tag = image_tag.tag
+            if language != "en":
+                # 該当言語の翻訳があれば優先
+                translation = (
+                    session.query(TagTranslation)
+                    .filter_by(tag_id=tag.id, language=language)
+                    .first()
+                )
+                if translation and translation.translated_name:
+                    print(translation.translated_name)
+                    tags.append(translation.translated_name)
+                    continue
+            # 翻訳がない or 言語が英語の場合は英語名
+            print(tag.name)
+            tags.append(tag.name)
+        return tags
 
 
 def is_sensitive(tag: str) -> bool:
@@ -215,22 +246,55 @@ def is_sensitive(tag: str) -> bool:
     return False
 
 
-def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
+def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]) -> None:
     with get_session() as session:
         any_sensitive = False
 
         for tag_name, score in tags.items():
             existing_tag = session.query(Tag).filter_by(name=tag_name).first()
+            newly_created = False
+
             if not existing_tag:
                 sensitive = is_sensitive(tag_name)
                 existing_tag = Tag(name=tag_name, is_sensitive=sensitive)
                 session.add(existing_tag)
                 session.flush()
+                newly_created = True  # 新しく追加されたタグ
+
             else:
                 sensitive = existing_tag.is_sensitive
 
             if sensitive:
                 any_sensitive = True
+
+            # 翻訳を追加（新規タグの場合のみ）
+            if newly_created:
+                tag_translation = get_translation_for_tag(
+                    existing_tag, language=LANGUAGE
+                )
+                if tag_translation:
+                    translation = TagTranslation(
+                        tag_id=existing_tag.id,
+                        language="ja",
+                        translated_name=tag_translation[0] if tag_translation else None,
+                        note=tag_translation[1] if tag_translation else None,
+                    )
+                    session.add(translation)
+
+                category_name = get_category_tag(existing_tag)
+                if category_name:
+                    category = (
+                        session.query(Category).filter_by(name=category_name).first()
+                    )
+                    if not category:
+                        category = Category(name=category_name)
+                        session.add(category)
+                        session.flush()
+                    if existing_tag.category_id is None:
+                        existing_tag.category_id = category
+                        print(
+                            f"✅ タグ '{existing_tag.name}' にカテゴリ '{category_name}' を追加しました。"
+                        )
 
             # ImageTag を登録
             image_tag = ImageTag(
@@ -241,10 +305,12 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]):
             )
             session.add(image_tag)
 
+        # 画像にセンシティブ情報を反映
         if any_sensitive:
             image_entry = session.query(ImageEntry).get(image_id)
             if image_entry:
                 image_entry.is_sensitive = True
+
         session.commit()
 
 
@@ -441,3 +507,76 @@ def _search_tags_or_optimized(
         .options(joinedload(ImageEntry.image_tags).joinedload(ImageTag.tag))
         .all()
     )
+
+
+# ---------------------------- Query: TagTranslations ----------------------------
+
+
+def get_tag_translation(tag_id: int, language: str = "ja") -> TagTranslation | None:
+    """指定したタグの日本語翻訳を取得"""
+    with get_session() as session:
+        return (
+            session.query(TagTranslation)
+            .filter_by(tag_id=tag_id, language=language)
+            .first()
+        )
+
+
+def add_tag_translation(
+    tag_id: int, language: str, translated_name: str, note: str | None = None
+) -> TagTranslation:
+    """タグの翻訳を追加または更新"""
+    with get_session() as session:
+        translation = (
+            session.query(TagTranslation)
+            .filter_by(tag_id=tag_id, language=language)
+            .first()
+        )
+        if translation:
+            translation.translated_name = translated_name
+            translation.note = note
+        else:
+            translation = TagTranslation(
+                tag_id=tag_id,
+                language=language,
+                translated_name=translated_name,
+                note=note,
+            )
+            session.add(translation)
+        session.commit()
+        return translation
+
+
+# ---------------------------- Query: Category ----------------------------
+
+
+def add_category_by_tag_id(
+    tag_id: int, category_name: str, overwrite: bool = False
+) -> None:
+    """タグIDにカテゴリを追加・関連付けする（カテゴリがなければ作成・上書きも可能）"""
+    with get_session() as session:
+        tag = session.query(Tag).get(tag_id)
+        if not tag:
+            print(f"⚠️ タグID {tag_id} が見つかりませんでした。")
+            return
+
+        # カテゴリを検索、なければ新規作成
+        category = session.query(Category).filter_by(name=category_name).first()
+        if not category:
+            category = Category(name=category_name)
+            session.add(category)
+            session.flush()  # category.id を得るため
+
+        # カテゴリの設定または上書き
+        if tag.category_id is None or overwrite:
+            old_category_id = tag.category_id
+            tag.category_id = category.id
+            session.commit()
+            action = "上書き" if old_category_id is not None else "設定"
+            print(
+                f"✅ タグ '{tag.name}' にカテゴリ '{category_name}' を{action}しました。"
+            )
+        else:
+            print(
+                f"ℹ️ タグ '{tag.name}' には既にカテゴリが設定されています（上書きしません）。"
+            )

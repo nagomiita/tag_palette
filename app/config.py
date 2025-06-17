@@ -17,3 +17,5 @@ SUPPORTED_FORMATS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
 MARGIN = 10
 SHADOW_OFFSET = 4
 ENABLE_IMAGE_CACHE = True
+
+LANGUAGE = "ja"  # 日本語をデフォルト言語に設定

@@ -51,6 +51,23 @@ class Tag(Base):
     image_tags = relationship(
         "ImageTag", back_populates="tag", cascade="all, delete-orphan"
     )
+    translations = relationship(
+        "TagTranslation", back_populates="tag", cascade="all, delete-orphan"
+    )
+
+
+class TagTranslation(Base):
+    __tablename__ = "tag_translations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    language = Column(String, nullable=False)  # 例: 'en', 'ja', 'zh'
+    translated_name = Column(String, nullable=False)
+    note = Column(Text, nullable=True)  # 補足説明など（任意）
+
+    tag = relationship("Tag", back_populates="translations")
+
+    __table_args__ = (UniqueConstraint("tag_id", "language", name="uix_tag_language"),)
 
 
 class Category(Base):
