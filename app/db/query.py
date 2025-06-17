@@ -17,7 +17,7 @@ from db.models import (
 from sqlalchemy import false, or_, true
 from sqlalchemy.orm import Session, joinedload
 from tag_config import SENSITIVE_KEYWORDS
-from utils.categorize import get_category_tag
+from utils.categorize import get_tag_category
 from utils.translations import get_translation_for_tag
 
 # ---------------------------- Session Management ----------------------------
@@ -281,7 +281,7 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]) -> Non
                     )
                     session.add(translation)
 
-                category_name = get_category_tag(existing_tag)
+                category_name = get_tag_category(existing_tag)
                 if category_name:
                     category = (
                         session.query(Category).filter_by(name=category_name).first()
