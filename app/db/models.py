@@ -23,8 +23,8 @@ class ImageEntry(Base):
     image_path = Column(String, unique=True, nullable=False)
     thumbnail_path = Column(String, unique=True, nullable=False)
     tag_embedding = Column(Text)
-    created_at = Column(DateTime)
-    registered_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime)  # ファイル作成日時
+    registered_at = Column(DateTime, default=datetime.now)  # 登録日時
     is_favorite = Column(Boolean, default=False)
     is_sensitive = Column(Boolean, default=False)
     view_count = Column(Integer, default=0, nullable=False)
@@ -39,7 +39,9 @@ class Tag(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
-    genre = Column(String)
+    genre_id = Column(
+        String, ForeignKey("genres.id", ondelete="SET NULL"), nullable=True
+    )
     category_id = Column(
         Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -47,12 +49,13 @@ class Tag(Base):
     registered_at = Column(DateTime, default=datetime.now)
     is_sensitive = Column(Boolean, default=False)
     disable = Column(Boolean, default=False)
+    genre = relationship("Genre", back_populates="tags")
     category = relationship("Category", back_populates="tags")
     image_tags = relationship(
         "ImageTag", back_populates="tag", cascade="all, delete-orphan"
     )
     translations = relationship(
-        "TagTranslation", back_populates="tag", cascade="all, delete-orphan"
+        "TagTranslation", back_populates="tag", passive_deletes=True
     )
 
 
@@ -76,7 +79,14 @@ class Category(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
 
-    tags = relationship("Tag", back_populates="category", cascade="all, delete")
+    tags = relationship("Tag", back_populates="category", passive_deletes=True)
+
+
+class Genre(Base):
+    __tablename__ = "genres"
+    id = Column(String, primary_key=True)
+    name = Column(String)
+    tags = relationship("Tag", back_populates="genre", passive_deletes=True)
 
 
 class Pose(Base):
@@ -107,11 +117,3 @@ class ImageTag(Base):
 
     image = relationship("ImageEntry", back_populates="image_tags")
     tag = relationship("Tag", back_populates="image_tags")
-
-
-class Genre(Base):
-    __tablename__ = "genres"
-
-    name_en = Column(String, primary_key=True)
-    name_ja = Column(String)
-    registered_at = Column(DateTime, default=datetime.now)
