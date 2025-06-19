@@ -39,9 +39,6 @@ class Tag(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True, nullable=False)
-    genre_id = Column(
-        String, ForeignKey("genres.id", ondelete="SET NULL"), nullable=True
-    )
     category_id = Column(
         Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -49,13 +46,15 @@ class Tag(Base):
     registered_at = Column(DateTime, default=datetime.now)
     is_sensitive = Column(Boolean, default=False)
     disable = Column(Boolean, default=False)
-    genre = relationship("Genre", back_populates="tags")
     category = relationship("Category", back_populates="tags")
     image_tags = relationship(
         "ImageTag", back_populates="tag", cascade="all, delete-orphan"
     )
     translations = relationship(
         "TagTranslation", back_populates="tag", passive_deletes=True
+    )
+    genre_relations = relationship(
+        "TagGenre", back_populates="tag", cascade="all, delete-orphan"
     )
 
 
@@ -85,8 +84,26 @@ class Category(Base):
 class Genre(Base):
     __tablename__ = "genres"
     id = Column(String, primary_key=True)
-    name = Column(String)
-    tags = relationship("Tag", back_populates="genre", passive_deletes=True)
+    name = Column(String, nullable=False)
+    note = Column(Text, nullable=True)  # 補足説明など（任意）
+    tag_relations = relationship(
+        "TagGenre",
+        back_populates="genre",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class TagGenre(Base):
+    __tablename__ = "tag_genres"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    genre_id = Column(
+        String, ForeignKey("genres.id", ondelete="CASCADE"), nullable=False
+    )
+
+    tag = relationship("Tag", back_populates="genre_relations")
+    genre = relationship("Genre", back_populates="tag_relations")
 
 
 class Pose(Base):

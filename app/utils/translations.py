@@ -1,6 +1,5 @@
 import re
 
-from db.models import Tag
 from utils.csv_reader import load_clean_tag_csv
 
 
@@ -23,13 +22,15 @@ csv_df = csv_df[csv_df["alias"].str.strip() != ""]
 
 
 # --- DBのタグを走査して一致するCSVがあるものだけ処理 ---
-def get_translation_for_tag(tag: Tag, language: str = "ja") -> tuple[str, str] | None:
-    print(f"処理中: {tag.name}...")
-    if tag.name not in csv_df.index:
+def get_translation_for_tag(
+    tag_name: str, language: str = "ja"
+) -> tuple[str, str] | None:
+    print(f"処理中: {tag_name}...")
+    if tag_name not in csv_df.index:
         print("  - CSVに存在しないタグです。スキップします。")
         return
 
-    row = csv_df.loc[tag.name]
+    row = csv_df.loc[tag_name]
     alias_text = row["alias"]
     alias_list = [a.strip() for a in alias_text.split(",") if a.strip()]
     if language != "ja":

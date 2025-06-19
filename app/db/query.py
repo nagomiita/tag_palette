@@ -8,16 +8,19 @@ from config import LANGUAGE
 from db.engine import engine
 from db.models import (
     Category,
+    Genre,
     ImageEntry,
     ImageTag,
     Pose,
     Tag,
+    TagGenre,
     TagTranslation,
 )
 from sqlalchemy import false, or_, true
 from sqlalchemy.orm import Session, joinedload
 from tag_config import SENSITIVE_KEYWORDS
 from utils.categorize import get_tag_category
+from utils.genre import get_genres
 from utils.translations import get_translation_for_tag
 
 # ---------------------------- Session Management ----------------------------
@@ -267,10 +270,23 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]) -> Non
             if sensitive:
                 any_sensitive = True
 
+            # ジャンルを追加
+            genre_infos = get_genres(existing_tag)
+            if genre_infos:
+                for genre_id, genre_name, note in genre_infos:
+                    add_genre_to_tag(
+                        session, existing_tag.id, genre_id, genre_name, note=note
+                    )
+                    print(
+                        f"タグ '{existing_tag.name}' にジャンル '{genre_name}' を追加しました。"
+                    )
+            else:
+                print(f"タグ '{existing_tag.name}' にジャンルはありませんでした。")
+
             # 翻訳を追加（新規タグの場合のみ）
             if newly_created:
                 tag_translation = get_translation_for_tag(
-                    existing_tag, language=LANGUAGE
+                    existing_tag.name, language=LANGUAGE
                 )
                 if tag_translation:
                     translation = TagTranslation(
@@ -291,7 +307,7 @@ def add_tag_entry(image_id: int, model_name: str, tags: dict[str, float]) -> Non
                         session.add(category)
                         session.flush()
                     if existing_tag.category_id is None:
-                        existing_tag.category_id = category
+                        existing_tag.category_id = category.id
                         print(
                             f"✅ タグ '{existing_tag.name}' にカテゴリ '{category_name}' を追加しました。"
                         )
@@ -580,3 +596,52 @@ def add_category_by_tag_id(
             print(
                 f"ℹ️ タグ '{tag.name}' には既にカテゴリが設定されています（上書きしません）。"
             )
+
+
+# ---------------------------- Query: Genre ----------------------------
+def add_genre_to_tag(
+    session: Session,
+    tag_id: int,
+    genre_id: str,
+    genre_name: str | None,
+    note: str | None,
+    overwrite: bool = False,
+) -> None:
+    """
+    タグIDにジャンルを追加・関連付けする（ジャンルがなければ作成・上書きも可能）
+    """
+
+    tag = session.query(Tag).get(tag_id)
+    if not tag:
+        print(f"⚠️ タグID {tag_id} が見つかりませんでした。")
+        return
+
+    # ジャンルを検索または新規作成
+    genre = session.query(Genre).filter_by(id=genre_id).first()
+    if not genre:
+        genre = Genre(id=genre_id, name=genre_name, note=note)
+        session.add(genre)
+        session.flush()
+    else:
+        print(f"⚠️ ジャンル '{genre_id}' はすでに存在しています。")
+    # 既存の関連があるかを確認
+    existing_relation = (
+        session.query(TagGenre).filter_by(tag_id=tag_id, genre_id=genre.id).first()
+    )
+
+    if existing_relation and not overwrite:
+        print(
+            f"ℹ️ タグ '{tag.name}' は既にジャンル '{genre_name}' に関連付けられています。"
+        )
+        return
+
+    if existing_relation and overwrite:
+        session.delete(existing_relation)
+        session.flush()
+
+    # 新しい関連付けを作成
+    relation = TagGenre(tag_id=tag.id, genre_id=genre.id)
+    session.add(relation)
+    session.commit()
+
+    print(f"✅ タグ '{tag.name}' にジャンル  を関連付けました。")
