@@ -16,10 +16,13 @@ uv run nuitka --onefile --enable-plugin=tk-inter --standalone main.py
 
 ```mermaid
 erDiagram
-    images ||--o{ image_tags : contains
-    tags ||--o{ image_tags : labeled_with
+    images ||--o{ image_tags : has
     images ||--o{ poses : has
-    tags ||--o{ image_tags : assigned_to
+    tags ||--o{ image_tags : has
+    tags ||--o{ tag_translations : has
+    tags }o--|| categories : belongs_to
+    tags ||--o{ tag_genres : has
+    genres ||--o{ tag_genres : has
 
     images {
         int id PK
@@ -31,16 +34,6 @@ erDiagram
         boolean is_favorite
         boolean is_sensitive
         int view_count
-    }
-
-    tags {
-        int id PK
-        string name
-        string genre
-        text embedding
-        datetime registered_at
-        boolean is_sensitive
-        boolean disable
     }
 
     image_tags {
@@ -58,10 +51,40 @@ erDiagram
         boolean is_flipped
     }
 
-    genres {
-        string name_en PK
-        string name_ja
+    tags {
+        int id PK
+        string name
+        int category_id FK
+        text embedding
         datetime registered_at
+        boolean is_sensitive
+        boolean disable
     }
+
+    tag_translations {
+        int id PK
+        int tag_id FK
+        string language
+        string translated_name
+        text note
+    }
+
+    categories {
+        int id PK
+        string name
+    }
+
+    genres {
+        string id PK
+        string name
+        text note
+    }
+
+    tag_genres {
+        int id PK
+        int tag_id FK
+        string genre_id FK
+    }
+
 
 ```
