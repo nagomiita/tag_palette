@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -33,6 +34,24 @@ class ImageEntry(Base):
     )
     poses = relationship("Pose", back_populates="image", cascade="all, delete-orphan")
 
+    # インデックス定義
+    __table_args__ = (
+        # 基本フィルタリング用インデックス
+        Index("idx_images_is_favorite", "is_favorite"),
+        Index("idx_images_is_sensitive", "is_sensitive"),
+        # 複合検索用インデックス（最重要）
+        Index("idx_images_favorite_sensitive", "is_favorite", "is_sensitive"),
+        # ソート最適化用インデックス
+        Index("idx_images_id_desc", "id"),
+        # 埋め込みベクトル検索用（部分インデックス的な効果）
+        Index("idx_images_tag_embedding", "tag_embedding"),
+        # 日時ソート用
+        Index("idx_images_created_at", "created_at"),
+        Index("idx_images_registered_at", "registered_at"),
+        # ビューカウント用
+        Index("idx_images_view_count", "view_count"),
+    )
+
 
 class Tag(Base):
     __tablename__ = "tags"
@@ -57,6 +76,24 @@ class Tag(Base):
         "TagGenre", back_populates="tag", cascade="all, delete-orphan"
     )
 
+    # インデックス定義
+    __table_args__ = (
+        # タグ名検索用（LIKE検索対応）
+        Index("idx_tags_name", "name"),
+        # カテゴリ検索用
+        Index("idx_tags_category_id", "category_id"),
+        # 埋め込みベクトル検索用
+        Index("idx_tags_embedding", "embedding"),
+        # センシティブフィルタ用
+        Index("idx_tags_is_sensitive", "is_sensitive"),
+        # 無効化フィルタ用
+        Index("idx_tags_disable", "disable"),
+        # 複合検索用
+        Index("idx_tags_sensitive_disable", "is_sensitive", "disable"),
+        # 登録日時ソート用
+        Index("idx_tags_registered_at", "registered_at"),
+    )
+
 
 class TagTranslation(Base):
     __tablename__ = "tag_translations"
@@ -69,7 +106,14 @@ class TagTranslation(Base):
 
     tag = relationship("Tag", back_populates="translations")
 
-    __table_args__ = (UniqueConstraint("tag_id", "language", name="uix_tag_language"),)
+    __table_args__ = (
+        UniqueConstraint("tag_id", "language", name="uix_tag_language"),
+        # インデックス定義
+        Index("idx_tag_translations_tag_id", "tag_id"),
+        Index("idx_tag_translations_language", "language"),
+        Index("idx_tag_translations_tag_language", "tag_id", "language"),
+        Index("idx_tag_translations_translated_name", "translated_name"),
+    )
 
 
 class Category(Base):
@@ -79,6 +123,9 @@ class Category(Base):
     name = Column(String, unique=True, nullable=False)
 
     tags = relationship("Tag", back_populates="category", passive_deletes=True)
+
+    # インデックス定義
+    __table_args__ = (Index("idx_categories_name", "name"),)
 
 
 class Genre(Base):
@@ -93,6 +140,9 @@ class Genre(Base):
         passive_deletes=True,
     )
 
+    # インデックス定義
+    __table_args__ = (Index("idx_genres_name", "name"),)
+
 
 class TagGenre(Base):
     __tablename__ = "tag_genres"
@@ -105,6 +155,13 @@ class TagGenre(Base):
     tag = relationship("Tag", back_populates="genre_relations")
     genre = relationship("Genre", back_populates="tag_relations")
 
+    # インデックス定義
+    __table_args__ = (
+        Index("idx_tag_genres_tag_id", "tag_id"),
+        Index("idx_tag_genres_genre_id", "genre_id"),
+        Index("idx_tag_genres_tag_genre", "tag_id", "genre_id"),
+    )
+
 
 class Pose(Base):
     __tablename__ = "poses"
@@ -116,9 +173,15 @@ class Pose(Base):
     embedding = Column(BLOB, nullable=False)
     is_flipped = Column(Boolean, default=False)
 
-    __table_args__ = (UniqueConstraint("image_id", "is_flipped"),)
-
     image = relationship("ImageEntry", back_populates="poses")
+
+    __table_args__ = (
+        UniqueConstraint("image_id", "is_flipped"),
+        # インデックス定義
+        Index("idx_poses_image_id", "image_id"),
+        Index("idx_poses_is_flipped", "is_flipped"),
+        Index("idx_poses_image_flipped", "image_id", "is_flipped"),
+    )
 
 
 class ImageTag(Base):
@@ -134,3 +197,20 @@ class ImageTag(Base):
 
     image = relationship("ImageEntry", back_populates="image_tags")
     tag = relationship("Tag", back_populates="image_tags")
+
+    # インデックス定義
+    __table_args__ = (
+        # 基本的な外部キーインデックス
+        Index("idx_image_tags_image_id", "image_id"),
+        Index("idx_image_tags_tag_id", "tag_id"),
+        # 複合検索用インデックス（最重要）
+        Index("idx_image_tags_tag_image", "tag_id", "image_id"),
+        Index("idx_image_tags_image_tag", "image_id", "tag_id"),
+        # 信頼度でのフィルタリング用
+        Index("idx_image_tags_confidence", "confidence"),
+        # モデル名でのフィルタリング用
+        Index("idx_image_tags_model_name", "model_name"),
+        # 複合検索用（信頼度込み）
+        Index("idx_image_tags_tag_confidence", "tag_id", "confidence"),
+        Index("idx_image_tags_image_confidence", "image_id", "confidence"),
+    )
