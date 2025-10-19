@@ -1,5 +1,6 @@
 import re
 
+from googletrans import Translator
 from utils.csv_reader import load_clean_tag_csv
 
 
@@ -68,3 +69,63 @@ def get_translation_for_tag(
 
     # 翻訳登録
     return (translated_name, note)
+
+
+translator = Translator()
+
+
+async def text_translate(text: str, src: str = "en", dest: str = "ja") -> str | None:
+    try:
+        result = await translator.translate(text, src=src, dest=dest)
+        if result and result.text:
+            return _clean_translation(result.text)
+        else:
+            raise ValueError("Translation returned None")
+    except Exception:
+        raise
+
+
+def _clean_translation(text: str) -> str:
+    print(f"Before clean: {repr(text)}")  # ← 内部確認
+    cleaned = (
+        text.replace("\\", "")
+        .replace("「", "(")
+        .replace("」", ")")
+        .replace("（", "(")
+        .replace("）", ")")
+    )
+    print(f"After clean: {repr(cleaned)}")
+    return cleaned
+
+
+async def translate(self, tags: list[str]) -> dict[str, str]:
+    translations = {}
+    for tag in tags:
+        try:
+            genre_en = self.tags_repository.extract_genre(tag)
+            if genre_en:
+                genre_en = self._clean_translation(genre_en)
+                genre_ja = self.tags_repository.get_genre(genre_en)
+                if genre_ja:
+                    translated_genre = genre_ja
+                else:
+                    print(f"Translating genre '{genre_en}' to Japanese...")
+                    translated_genre = await self.safe_translate(
+                        genre_en, src="en", dest="ja"
+                    )
+                    self.tags_repository.insert_genre(genre_en, translated_genre)
+                    print(f"Translated genre '{genre_en}' to '{translated_genre}'")
+                pos = tag.rfind("(")
+                striped_tag = tag[:pos].strip() if pos != -1 else tag
+                striped_tag = self._clean_translation(striped_tag)
+                translated = await self.safe_translate(striped_tag, src="en", dest="ja")
+                translated = f"{translated}({translated_genre})"
+            else:
+                translated = await self.safe_translate(tag, src="en", dest="ja")
+            translations[tag] = self._clean_translation(translated)
+            logger.info(f"Translated '{tag}' to '{translations[tag]}'")
+            print(f"Translated '{tag}' to '{translations[tag]}'")
+        except Exception as e:
+            print(f"❌ Error translating '{tag}': {e}")
+            raise
+    return translations

@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 # 設定
 DB_PATH = Path("images.db")  # 元DB
-BACKUP_DIR = Path("F:/backup")  # バックアップ先
+BACKUP_DIR = Path("Z:/backup")  # バックアップ先
 BACKUP_DB_PATH = BACKUP_DIR / DB_PATH.name
 BACKUP_IMAGE_DIR = BACKUP_DIR / "images"  # 画像バックアップフォルダ
 

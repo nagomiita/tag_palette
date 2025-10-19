@@ -7,7 +7,7 @@ IS_DEV = ENV == "dev"
 
 FONT_TYPE = "meiryo"
 FONT_SIZE = 13
-THUMBNAIL_SIZE = (190, 190)
+THUMBNAIL_SIZE = (256, 256)
 
 IMAGE_DIR = Path("images_dev") if IS_DEV else Path("images")
 THUMB_DIR = Path("thumbnails_dev") if IS_DEV else Path("thumbnails")

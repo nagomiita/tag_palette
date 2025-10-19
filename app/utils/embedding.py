@@ -34,15 +34,15 @@ sentence_model = SentenceTransformer("paraphrase-MiniLM-L6-v2").to("cpu")
 #     return " ".join(nouns)
 
 
-def tag_result_to_embedding(tag_result: dict[str, float]) -> np.ndarray:
+def tag_result_to_embedding(tag_result: dict[str, float]) -> bytes:
     tag_names = list(tag_result.keys())
     weights = np.array([tag_result[tag] for tag in tag_names])
-    vectors = []
+    vectors: list[np.ndarray | None] = []
 
     missing_tags = []
     missing_indices = []
 
-    # 1. 既存のベクトルを探す（順序を崩さず）
+    # 1. 既存のベクトルを取得
     for i, tag in enumerate(tag_names):
         emb = get_tag_embedding(tag)
         if emb is not None and emb.size > 0:
@@ -50,9 +50,9 @@ def tag_result_to_embedding(tag_result: dict[str, float]) -> np.ndarray:
         else:
             missing_tags.append(tag)
             missing_indices.append(i)
-            vectors.append(None)  # 後から埋める
+            vectors.append(None)
 
-    # 2. 未登録タグを一括エンコード
+    # 2. 未登録タグのエンコードと保存
     if missing_tags:
         new_embeddings = sentence_model.encode(
             missing_tags,
@@ -61,15 +61,18 @@ def tag_result_to_embedding(tag_result: dict[str, float]) -> np.ndarray:
         )
         for j, i in enumerate(missing_indices):
             vec = new_embeddings[j]
-            vec_str = ",".join(map(str, vec))
-            add_tag_embedding(missing_tags[j], vec_str)
+            vec_blob = vec.astype(np.float32).tobytes()
+            add_tag_embedding(missing_tags[j], vec_blob)
             vectors[i] = vec * weights[i]
 
-    # 3. 加重平均 → 正規化
+    # 3. 加重平均 + 正規化
     vectors = np.array(vectors)
     final_embedding = np.mean(vectors, axis=0)
     norm = np.linalg.norm(final_embedding)
-    return final_embedding / norm if norm > 1e-6 else final_embedding
+    normalized_embedding = final_embedding / norm if norm > 1e-6 else final_embedding
+
+    # 4. バイナリに変換して返す
+    return normalized_embedding.astype(np.float32).tobytes()
 
 
 def get_similar_image_ids(

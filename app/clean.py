@@ -2,7 +2,8 @@ import os
 import time
 
 import psutil
-from config import DB_PATH
+
+# from config import DB_PATH
 
 MAX_RETRIES = 3
 RETRY_DELAY_SEC = 1.0
@@ -24,12 +25,12 @@ def kill_process_using_file(filepath: str):
 # 強制削除試行
 for attempt in range(1, MAX_RETRIES + 1):
     try:
-        os.remove(DB_PATH)
-        print(f"✅ 削除完了: {DB_PATH}")
+        os.remove("images_dev.db")
+        print(f"✅ 削除完了: {'images_dev.db'}")
         break
     except PermissionError as e:
         print(f"🛑 削除失敗（{attempt}/{MAX_RETRIES}）: {e}")
-        kill_process_using_file(DB_PATH)
+        kill_process_using_file("images_dev.db")
         time.sleep(RETRY_DELAY_SEC)
 else:
     print("🚨 複数回試行しましたが削除できませんでした。")

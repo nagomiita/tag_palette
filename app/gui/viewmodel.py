@@ -1,5 +1,6 @@
 from db.models import ImageEntry
 from db.query import (
+    get_all_tags,
     get_entries_by_tags,
     get_favorite_flag,
     get_filtered_image_entries,
@@ -55,9 +56,13 @@ class GalleryViewModel:
     def delete_image(self, image_id) -> bool:
         return image_manager.delete_image_files(image_id)
 
-    def get_tags_for_image(self, image_id) -> list[str]:
+    def get_tags_for_image(self, image_id: int, language: str) -> list[str]:
         """Fetch tags associated with a specific image."""
-        return get_tags_for_image(image_id)
+        return get_tags_for_image(image_id, language=language)
+
+    def get_all_tags(self) -> list[str]:
+        """Fetch all tags from the database."""
+        return get_all_tags()
 
     def get_entries_by_tags(
         self,

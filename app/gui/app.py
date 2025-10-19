@@ -4,10 +4,11 @@ from pathlib import Path
 from tkinter import messagebox
 
 import customtkinter as ctk
-from config import THUMBNAIL_SIZE
+from config import LANGUAGE, THUMBNAIL_SIZE
 from db.models import ImageEntry
 from gui.base import BaseWindow
 from gui.components.button import create_button
+from gui.components.tag_suggest_box import TagSuggestBox
 from gui.original import Original
 from gui.thumbnail import ImageThumbnail
 from gui.viewmodel import GalleryViewModel
@@ -80,9 +81,11 @@ class App(BaseWindow):
         # 右側の検索UIを入れるフレーム（右寄せ）
         right_frame = ctk.CTkFrame(button_frame, fg_color="transparent")
         right_frame.pack(side="right")
+        tag_candidates = self.viewmodel.get_all_tags()
 
-        self.tag_entry = ctk.CTkEntry(
+        self.tag_entry = TagSuggestBox(
             right_frame,
+            suggestion_list=tag_candidates,
             placeholder_text="タグを入力",
             width=160,
         )
@@ -213,7 +216,7 @@ class App(BaseWindow):
             )
             return
 
-        tags = self.viewmodel.get_tags_for_image(image_id)
+        tags = self.viewmodel.get_tags_for_image(image_id, language=LANGUAGE)
         is_fav = self.viewmodel.get_favorite_state(image_id)
 
         Original(

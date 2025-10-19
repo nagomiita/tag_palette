@@ -88,3 +88,7 @@ erDiagram
 
 
 ```
+
+```
+robocopy app\images Z:\backup\images /MIR /SL /Z /W:5 /R:3 /LOG:backup.log
+```
