@@ -18,3 +18,11 @@ wheels/
 
 # Logs
 *.log
+
+# Sample images
+samples/*.png
+samples/*.jpg
+samples/*.jpeg
+samples/*.webp
+samples/*.bmp
+samples/*.gif
