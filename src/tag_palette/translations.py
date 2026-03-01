@@ -1,13 +1,82 @@
 from __future__ import annotations
 
+import asyncio
+import csv
 import logging
 import re
+from pathlib import Path
 
 from googletrans import Translator
 
 logger = logging.getLogger(__name__)
 
 _csv_df = None
+
+# ── 翻訳キャッシュ ──────────────────────────────────────
+
+_translation_cache: dict[str, str] = {}
+
+
+def _default_cache_path() -> Path:
+    """デフォルトのキャッシュファイルパスを返す (danbooru_tags.csv と同じディレクトリ)。"""
+    import importlib.resources
+
+    return Path(
+        str(importlib.resources.files("tag_palette") / "data" / "translation_cache.csv")
+    )
+
+
+def load_translation_cache(cache_path: Path | None = None) -> None:
+    """CSV から翻訳キャッシュを読み込む。"""
+    path = cache_path or _default_cache_path()
+    if not path.exists():
+        return
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) >= 2:
+                _translation_cache[row[0]] = row[1]
+    logger.info("翻訳キャッシュ読み込み: %d 件", len(_translation_cache))
+
+
+def save_translation_cache(cache_path: Path | None = None) -> None:
+    """翻訳キャッシュを CSV に保存する。"""
+    path = cache_path or _default_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        for tag, ja in sorted(_translation_cache.items()):
+            writer.writerow([tag, ja])
+    logger.info("翻訳キャッシュ保存: %d 件", len(_translation_cache))
+
+
+def translate_tag(tag_name: str) -> str:
+    """タグを日本語に翻訳する。
+
+    解決順序: danbooru CSV → 翻訳キャッシュ → Google 翻訳 API → フォールバック
+    """
+    # 1. danbooru CSV から取得
+    result = get_translation_for_tag(tag_name)
+    if result:
+        return result[0]
+
+    # 2. キャッシュにあればそれを返す
+    if tag_name in _translation_cache:
+        return _translation_cache[tag_name]
+
+    # 3. Google 翻訳 API で翻訳してキャッシュに保存
+    readable = tag_name.replace("_", " ")
+    try:
+        ja = asyncio.run(text_translate(readable, src="en", dest="ja"))
+        if ja:
+            _translation_cache[tag_name] = ja
+            return ja
+    except Exception as e:
+        logger.debug("Google翻訳失敗: %s -> %s", tag_name, e)
+
+    # 4. フォールバック
+    _translation_cache[tag_name] = readable
+    return readable
 
 
 def _get_csv_df():

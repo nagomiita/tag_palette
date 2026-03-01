@@ -8,7 +8,10 @@ from tag_palette.translations import (
     get_translation_for_tag,
     is_japanese,
     is_preferably_japanese,
+    load_translation_cache,
+    save_translation_cache,
     text_translate,
+    translate_tag,
 )
 
 __all__ = [
@@ -19,6 +22,9 @@ __all__ = [
     # Translation
     "get_translation_for_tag",
     "text_translate",
+    "translate_tag",
+    "load_translation_cache",
+    "save_translation_cache",
     "is_japanese",
     "is_preferably_japanese",
     # Categorization

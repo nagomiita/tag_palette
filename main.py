@@ -25,7 +25,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from tag_palette import generate_tags
+from tag_palette import generate_tags, load_translation_cache, save_translation_cache, translate_tag
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 THUMBNAIL_SIZE = (300, 300)
@@ -119,10 +119,6 @@ def find_eagle_images(
         if meta.get("isDeleted", False):
             continue
 
-        # 既にタグが付いている場合はスキップ
-        if meta.get("tags"):
-            continue
-
         # 更新時刻チェック (Eagle の mtime はミリ秒)
         mtime = meta.get("mtime", 0)
         if mtime <= cutoff_ms:
@@ -180,14 +176,14 @@ def ensure_thumbnail(eagle_image: EagleImage) -> None:
 
 
 def write_tags_to_eagle(eagle_image: EagleImage, tags: dict[str, float]) -> None:
-    """タグ名のリストを Eagle の metadata.json に書き戻す。"""
+    """タグの日本語訳を Eagle の metadata.json の annotation に書き込む。"""
     try:
         with open(eagle_image.metadata_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
 
-        # 信頼度順のタグ名リスト
-        tag_names = list(tags.keys())
-        meta["tags"] = tag_names
+        # 信頼度順のタグを日本語訳してカンマ区切り文字列にする
+        ja_tags = [translate_tag(tag) for tag in tags]
+        meta["annotation"] = ", ".join(ja_tags)
 
         with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
@@ -240,6 +236,9 @@ def main() -> None:
         else:
             logger.info("初回実行: 全画像を対象にします")
 
+    # 翻訳キャッシュ読み込み
+    load_translation_cache()
+
     # Eagle 画像探索
     images = find_eagle_images(args.image_dir, since=since)
     logger.info("対象画像数: %d", len(images))
@@ -271,6 +270,9 @@ def main() -> None:
         "完了: %d/%d 件 (%.2fs, %.2fs/image)",
         processed, len(images), elapsed, elapsed / max(len(images), 1),
     )
+
+    # 翻訳キャッシュ保存
+    save_translation_cache()
 
     # 実行時刻を記録
     save_last_run(args.image_dir, run_time)
