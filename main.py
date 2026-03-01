@@ -25,7 +25,16 @@ from pathlib import Path
 
 from PIL import Image
 
-from tag_palette import generate_tags, load_translation_cache, save_translation_cache, translate_tags
+from tag_palette import (
+    embedding_to_base64,
+    generate_tags,
+    load_tag_embeddings,
+    load_translation_cache,
+    save_tag_embeddings,
+    save_translation_cache,
+    tags_to_embedding,
+    translate_tags,
+)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 THUMBNAIL_SIZE = (300, 300)
@@ -50,8 +59,8 @@ def setup_logging(log_file: Path | None = None) -> None:
 
 
 def _state_path(image_dir: Path) -> Path:
-    """image_dir 内に .last_run ファイルを配置。"""
-    return image_dir / STATE_FILE
+    """image_dir の親ディレクトリ (eagle.library/) に .last_run ファイルを配置。"""
+    return image_dir.parent / STATE_FILE
 
 
 def load_last_run(image_dir: Path) -> datetime | None:
@@ -175,22 +184,54 @@ def ensure_thumbnail(eagle_image: EagleImage) -> None:
 # ── Eagle metadata.json への書き戻し ────────────────────
 
 
-def write_tags_to_eagle(eagle_image: EagleImage, tags: dict[str, float]) -> None:
-    """タグの日本語訳を Eagle の metadata.json の annotation に書き込む。"""
+def write_tags_to_eagle(
+    eagle_image: EagleImage, tags: dict[str, float], model_name: str,
+) -> None:
+    """タグの日本語訳を Eagle の metadata.json の annotation に書き込み、
+    tag_palette.json にタグ生データを保存する。"""
+    tag_names = list(tags.keys())
+    ja_tags = translate_tags(tag_names)
+
+    # Eagle metadata.json に annotation 書き込み
     try:
         with open(eagle_image.metadata_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
 
-        # 信頼度順のタグを日本語訳してカンマ区切り文字列にする
-        ja_tags = translate_tags(list(tags.keys()))
         meta["annotation"] = ", ".join(ja_tags)
 
         with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
-
     except Exception as e:
         logger.error(
             "metadata.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e
+        )
+
+    # 埋め込みベクトル生成
+    embedding_b64 = ""
+    try:
+        embedding_bytes = tags_to_embedding(tags)
+        if embedding_bytes:
+            embedding_b64 = embedding_to_base64(embedding_bytes)
+    except Exception as e:
+        logger.error(
+            "埋め込み生成失敗: %s -> %s", eagle_image.eagle_id, e
+        )
+
+    # tag_palette.json にタグ生データ保存
+    try:
+        tp_path = eagle_image.info_dir / "tag_palette.json"
+        tp_data = {
+            "model_name": model_name,
+            "tags": tags,
+            "tags_ja": dict(zip(tag_names, ja_tags)),
+            "embedding_blob": embedding_b64,
+            "generated_at": datetime.now().isoformat(),
+        }
+        with open(tp_path, "w", encoding="utf-8") as f:
+            json.dump(tp_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(
+            "tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e
         )
 
 
@@ -236,8 +277,9 @@ def main() -> None:
         else:
             logger.info("初回実行: 全画像を対象にします")
 
-    # 翻訳キャッシュ読み込み
+    # キャッシュ読み込み
     load_translation_cache()
+    load_tag_embeddings()
 
     # Eagle 画像探索
     images = find_eagle_images(args.image_dir, since=since)
@@ -260,7 +302,9 @@ def main() -> None:
                 eagle_image.image_path, model_name=args.model
             )
             if tag_results:
-                write_tags_to_eagle(eagle_image, tag_results[0].tags)
+                write_tags_to_eagle(
+                    eagle_image, tag_results[0].tags, tag_results[0].model_name,
+                )
                 processed += 1
         except Exception as e:
             logger.error("Failed: %s -> %s", eagle_image.eagle_id, e)
@@ -271,8 +315,9 @@ def main() -> None:
         processed, len(images), elapsed, elapsed / max(len(images), 1),
     )
 
-    # 翻訳キャッシュ保存
+    # キャッシュ保存
     save_translation_cache()
+    save_tag_embeddings()
 
     # 実行時刻を記録
     save_last_run(args.image_dir, run_time)

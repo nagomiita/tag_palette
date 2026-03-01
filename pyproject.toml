@@ -12,6 +12,7 @@ dependencies = [
     "opencv-python-headless>=4.11.0",
     "pandas>=2.3.0",
     "pillow>=11.2.1",
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]

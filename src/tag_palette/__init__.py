@@ -1,6 +1,13 @@
 """tag-palette: WD14 Tagger を使った画像タグ生成ライブラリ。"""
 
 from tag_palette.categorize import CATEGORY_ID_TO_NAME, get_tag_category
+from tag_palette.embedding import (
+    base64_to_embedding,
+    embedding_to_base64,
+    load_tag_embeddings,
+    save_tag_embeddings,
+    tags_to_embedding,
+)
 from tag_palette.genre import get_genres
 from tag_palette.sensitive import SENSITIVE_KEYWORDS, is_sensitive
 from tag_palette.tagger import TagResult, generate_tags, generate_tags_batch
@@ -34,6 +41,12 @@ __all__ = [
     "get_tag_category",
     # Genre
     "get_genres",
+    # Embedding
+    "tags_to_embedding",
+    "embedding_to_base64",
+    "base64_to_embedding",
+    "load_tag_embeddings",
+    "save_tag_embeddings",
     # Sensitive content
     "SENSITIVE_KEYWORDS",
     "is_sensitive",
