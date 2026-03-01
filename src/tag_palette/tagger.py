@@ -23,8 +23,8 @@ class TagResult:
 
 
 def _image_interrogate(image_path: Path, model_name: str) -> dict[str, float]:
-    from lib.wd14tagger.tagger.interrogator.interrogator import AbsInterrogator
-    from lib.wd14tagger.tagger.interrogators import interrogators
+    from tag_palette._wd14tagger.interrogator.interrogator import AbsInterrogator
+    from tag_palette._wd14tagger.interrogators import interrogators
 
     interrogator = interrogators[model_name]
     with Image.open(image_path) as im:
@@ -53,7 +53,7 @@ def generate_tags(
     Raises:
         ImportError: lib.wd14tagger がインストールされていない場合
     """
-    from lib.wd14tagger.tagger.interrogators import interrogators
+    from tag_palette._wd14tagger.interrogators import interrogators
 
     image_path = Path(image_path)
     results = []
