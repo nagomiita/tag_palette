@@ -39,6 +39,7 @@ from tag_palette import (
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 THUMBNAIL_SIZE = (300, 300)
 STATE_FILE = Path(".last_run")
+SAVE_INTERVAL = 100
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class EagleImage:
 def find_eagle_images(
     image_dir: Path,
     since: datetime | None,
+    skip_processed: bool = True,
 ) -> list[EagleImage]:
     """Eagle images ディレクトリから対象画像を探索。
 
@@ -127,6 +129,10 @@ def find_eagle_images(
 
         # 削除済みはスキップ
         if meta.get("isDeleted", False):
+            continue
+
+        # 既処理スキップ (tag_palette.json が既にある場合)
+        if skip_processed and (info_dir / "tag_palette.json").exists():
             continue
 
         # 更新時刻チェック (Eagle の mtime はミリ秒)
@@ -285,7 +291,9 @@ def main() -> None:
     load_tag_embeddings()
 
     # Eagle 画像探索
-    images = find_eagle_images(args.image_dir, since=since)
+    images = find_eagle_images(
+        args.image_dir, since=since, skip_processed=not args.force
+    )
     logger.info("対象画像数: %d", len(images))
 
     if not images:
@@ -309,6 +317,10 @@ def main() -> None:
                     tag_results[0].model_name,
                 )
                 processed += 1
+                if processed % SAVE_INTERVAL == 0:
+                    save_translation_cache()
+                    save_tag_embeddings()
+                    logger.info("キャッシュ保存 (%d件処理済み)", processed)
         except Exception as e:
             logger.error("Failed: %s -> %s", eagle_image.eagle_id, e)
 
