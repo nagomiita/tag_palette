@@ -1,6 +1,7 @@
 import re
 import sys
 
+import numpy as np
 import pandas as pd
 
 from typing import Iterable, Tuple, List, Dict
@@ -111,6 +112,9 @@ class AbsInterrogator:
         selected = [p for p in optimal_order if p in available]
         return selected
 
+    def preprocess(self, image: Image.Image) -> np.ndarray:
+        raise NotImplementedError()
+
     def interrogate(
         self,
         image: Image.Image
@@ -119,3 +123,10 @@ class AbsInterrogator:
         Dict[str, float]  # tag confidents
     ]:
         raise NotImplementedError()
+
+    def interrogate_batch(
+        self,
+        images: List[Image.Image]
+    ) -> List[Tuple[Dict[str, float], Dict[str, float]]]:
+        """複数画像をまとめて推論する。デフォルトは1枚ずつフォールバック。"""
+        return [self.interrogate(img) for img in images]

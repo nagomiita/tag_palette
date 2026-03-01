@@ -59,42 +59,20 @@ class CamieTaggerInterrogator(AbsInterrogator):
             self.metadata['idx_to_tag'] = self.metadata['dataset_info']['tag_mapping']['idx_to_tag']
             self.metadata['tag_to_category'] = self.metadata['dataset_info']['tag_mapping']['tag_to_category']
 
-    def interrogate(
-        self,
-        image: Image.Image
-    ) -> tuple[
-        dict[str, float],  # rating confidents
-        dict[str, float]  # tag confidents
-    ]:
-        # init model
-        if self.model is None:
-            self.load()
-        if self.model is None:
-            raise Exception("Model not loading.")
-
+    def preprocess(self, image: Image.Image) -> np.ndarray:
         img_array_chw = preprocess_image(image)
-        img_numpy = np.expand_dims(img_array_chw, axis=0)
+        return img_array_chw
 
-        input_ = self.model.get_inputs()[0]
+    def _postprocess_output(self, outputs: list[np.ndarray], batch_index: int = 0) -> tuple[dict[str, float], dict[str, float]]:
+        initial_probs = 1.0 / (1.0 + np.exp(-outputs[0]))
+        refined_probs = 1.0 / (1.0 + np.exp(-outputs[1])) if len(outputs) > 1 else initial_probs
 
-        if input_.type == 'tensor(float)':
-            img_numpy = img_numpy.astype(np.float32)
-
-        # evaluate model
-        outputs = self.model.run(None, {input_.name: img_numpy})
-
-        # Process outputs
-        initial_probs: np.ndarray = 1.0 / (1.0 + np.exp(-outputs[0]))
-        refined_probs: np.ndarray = 1.0 / (1.0 + np.exp(-outputs[1])) if len(outputs) > 1 else initial_probs
-
-        # Create a dictionary of all tags and their probabilities
         all_tags = {}
         for idx_str, tag_name in self.metadata['idx_to_tag'].items():
             idx = int(idx_str)
-            prob = float(refined_probs[0, idx])
+            prob = float(refined_probs[batch_index, idx])
             all_tags[tag_name] = prob
 
-        # Separate ratings from other tags
         rating_tags = {}
         other_tags = {}
         for tag_name, prob in all_tags.items():
@@ -105,6 +83,49 @@ class CamieTaggerInterrogator(AbsInterrogator):
                 other_tags[tag_name] = prob
 
         return rating_tags, other_tags
+
+    def interrogate(
+        self,
+        image: Image.Image
+    ) -> tuple[
+        dict[str, float],  # rating confidents
+        dict[str, float]  # tag confidents
+    ]:
+        if self.model is None:
+            self.load()
+        if self.model is None:
+            raise Exception("Model not loading.")
+
+        img_numpy = np.expand_dims(self.preprocess(image), axis=0)
+
+        input_ = self.model.get_inputs()[0]
+        if input_.type == 'tensor(float)':
+            img_numpy = img_numpy.astype(np.float32)
+
+        outputs = self.model.run(None, {input_.name: img_numpy})
+        return self._postprocess_output(outputs)
+
+    def interrogate_batch(
+        self,
+        images: list[Image.Image]
+    ) -> list[tuple[dict[str, float], dict[str, float]]]:
+        if self.model is None:
+            self.load()
+        if self.model is None:
+            raise Exception("Model not loading.")
+
+        batch = np.stack([self.preprocess(img) for img in images])
+
+        input_ = self.model.get_inputs()[0]
+        if input_.type == 'tensor(float)':
+            batch = batch.astype(np.float32)
+
+        try:
+            outputs = self.model.run(None, {input_.name: batch})
+        except Exception:
+            return [self.interrogate(img) for img in images]
+
+        return [self._postprocess_output(outputs, batch_index=i) for i in range(len(images))]
 
 def preprocess_image(img: Image.Image, image_size: int = 512) -> np.ndarray:
     """Process a PIL image for inference using NumPy."""

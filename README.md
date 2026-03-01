@@ -29,7 +29,7 @@ for result in results:
 デフォルトモデルは `wd-eva02-large-tagger-v3` です。モデルを指定することもできます。
 
 ```python
-results = generate_tags("image.jpg", model_name="wd14-convnextv2.v1")
+results = generate_tags("image.jpg", model_name="pixai-tagger-v0.9")
 ```
 
 全モデルで推論する場合:

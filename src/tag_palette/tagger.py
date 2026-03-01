@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from PIL import Image
 
@@ -22,15 +24,21 @@ class TagResult:
     tags: dict[str, float]
 
 
+def _load_image(image_path: Path) -> Image.Image:
+    im = Image.open(image_path)
+    im = im.convert("RGB")
+    im.thumbnail((512, 512), Image.Resampling.LANCZOS)
+    return im
+
+
 def _image_interrogate(image_path: Path, model_name: str) -> dict[str, float]:
     from tag_palette._wd14tagger.interrogator.interrogator import AbsInterrogator
     from tag_palette._wd14tagger.interrogators import interrogators
 
     interrogator = interrogators[model_name]
-    with Image.open(image_path) as im:
-        im = im.convert("RGB")
-        im.thumbnail((512, 512), Image.Resampling.LANCZOS)
-        result = interrogator.interrogate(im)
+    im = _load_image(image_path)
+    result = interrogator.interrogate(im)
+    im.close()
     return AbsInterrogator.postprocess_tags(result[1])
 
 
@@ -49,9 +57,6 @@ def generate_tags(
 
     Returns:
         TagResult のリスト。各要素にモデル名とタグ(信頼度付き)を含む。
-
-    Raises:
-        ImportError: lib.wd14tagger がインストールされていない場合
     """
     from tag_palette._wd14tagger.interrogators import interrogators
 
@@ -67,5 +72,67 @@ def generate_tags(
                 results.append(TagResult(model_name=name, tags=tags))
         except Exception as e:
             logger.warning("Skipped model '%s' due to error: %s", name, e)
+
+    return results
+
+
+def generate_tags_batch(
+    image_paths: list[str | Path],
+    model_name: str = "wd-eva02-large-tagger-v3",
+    batch_size: int = 4,
+    max_workers: int = 4,
+    on_batch_done: Callable[[int, int], None] | None = None,
+) -> list[TagResult]:
+    """複数画像をバッチ処理でタグ生成する。
+
+    前処理をスレッドプールで並列化し、ONNX推論をバッチ実行する。
+
+    Parameters:
+        image_paths: 画像ファイルパスのリスト
+        model_name: 使用するモデル名
+        batch_size: 1回の推論に含める画像数
+        max_workers: 前処理の並列ワーカー数
+        on_batch_done: バッチ完了時のコールバック (処理済み数, 全体数)
+
+    Returns:
+        TagResult のリスト（入力と同じ順序）。処理失敗した画像は tags が空。
+    """
+    from tag_palette._wd14tagger.interrogator.interrogator import AbsInterrogator
+    from tag_palette._wd14tagger.interrogators import interrogators
+
+    interrogator = interrogators[model_name]
+
+    paths = [Path(p) for p in image_paths]
+    total = len(paths)
+    results: list[TagResult] = []
+
+    for batch_start in range(0, total, batch_size):
+        batch_paths = paths[batch_start : batch_start + batch_size]
+
+        # 前処理を並列実行（PIL/OpenCV は C拡張で GIL を解放する）
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            images = list(executor.map(_load_image, batch_paths))
+
+        try:
+            batch_results = interrogator.interrogate_batch(images)
+            for ratings, tags in batch_results:
+                postprocessed = AbsInterrogator.postprocess_tags(tags)
+                results.append(TagResult(model_name=model_name, tags=postprocessed))
+        except Exception as e:
+            logger.warning("Batch inference failed, falling back: %s", e)
+            for img in images:
+                try:
+                    _, tags = interrogator.interrogate(img)
+                    postprocessed = AbsInterrogator.postprocess_tags(tags)
+                    results.append(TagResult(model_name=model_name, tags=postprocessed))
+                except Exception as e2:
+                    logger.warning("Skipped image due to error: %s", e2)
+                    results.append(TagResult(model_name=model_name, tags={}))
+        finally:
+            for img in images:
+                img.close()
+
+        if on_batch_done:
+            on_batch_done(min(batch_start + batch_size, total), total)
 
     return results

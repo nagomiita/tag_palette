@@ -49,6 +49,20 @@ class MLDanbooruInterrogator(AbsInterrogator):
         with open(tags_path, 'r', encoding='utf-8') as filen:
             self.tags = json.load(filen)
 
+    def preprocess(self, image: Image.Image) -> 'float32':
+        image = dbimutils.fill_transparent(image)
+        image = dbimutils.resize(image, 448)
+        x = asarray(image, dtype=float32) / 255
+        # HWC -> CHW
+        return x.transpose((2, 0, 1))
+
+    def _postprocess_output(self, y: 'float32') -> tuple[dict[str, float], dict[str, float]]:
+        y = 1 / (1 + exp(-y))
+        if self.tags is None:
+            raise Exception("Tags not loading.")
+        tags = {tag: float(conf) for tag, conf in zip(self.tags, y.flatten())}
+        return {}, tags
+
     def interrogate(
         self,
         image: Image.Image
@@ -56,31 +70,33 @@ class MLDanbooruInterrogator(AbsInterrogator):
         dict[str, float],  # rating confidents
         dict[str, float]  # tag confidents
     ]:
-        # init model
         if self.model is None:
             self.load()
 
-        image = dbimutils.fill_transparent(image)
-        image = dbimutils.resize(image, 448)
-
-        x = asarray(image, dtype=float32) / 255
-        # HWC -> 1CHW
-        x = x.transpose((2, 0, 1))
-        x = expand_dims(x, 0)
+        x = expand_dims(self.preprocess(image), 0)
 
         input_ = self.model.get_inputs()[0]
         output = self.model.get_outputs()[0]
-        # evaluate model
         y, = self.model.run([output.name], {input_.name: x})
 
-        # Softmax
-        y = 1 / (1 + exp(-y))
+        return self._postprocess_output(y[0])
 
-        if self.tags is None:
-            raise Exception("Tags not loading.")
+    def interrogate_batch(
+        self,
+        images: list[Image.Image]
+    ) -> list[tuple[dict[str, float], dict[str, float]]]:
+        if self.model is None:
+            self.load()
 
-        tags = {tag: float(conf) for tag, conf in zip(self.tags, y.flatten())}
-        return {}, tags
+        from numpy import stack
+        batch = stack([self.preprocess(img) for img in images])
 
-    def large_batch_interrogate(self, images: list, dry_run=False) -> str:
-        raise NotImplementedError()
+        input_ = self.model.get_inputs()[0]
+        output = self.model.get_outputs()[0]
+
+        try:
+            y, = self.model.run([output.name], {input_.name: batch})
+        except Exception:
+            return [self.interrogate(img) for img in images]
+
+        return [self._postprocess_output(y[i]) for i in range(len(images))]

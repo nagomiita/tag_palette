@@ -2,6 +2,7 @@ from tag_palette._wd14tagger.interrogator.interrogator import AbsInterrogator
 from tag_palette._wd14tagger.interrogator.waifudiffusioninterrogator import WaifuDiffusionInterrogator
 from tag_palette._wd14tagger.interrogator.mldanbooruinterrogator import MLDanbooruInterrogator
 from tag_palette._wd14tagger.interrogator.camietaggerinterrogator import CamieTaggerInterrogator
+from tag_palette._wd14tagger.interrogator.pixaitaggerinterrogator import PixAITaggerInterrogator
 
 interrogators: dict[str, AbsInterrogator] = {
     'wd14-vit.v1': WaifuDiffusionInterrogator(
@@ -83,5 +84,9 @@ interrogators: dict[str, AbsInterrogator] = {
         repo_id='Camais03/camie-tagger-v2',
         model_path='camie-tagger-v2.onnx',
         tags_path='camie-tagger-v2-metadata.json'
+    ),
+    'pixai-tagger-v0.9': PixAITaggerInterrogator(
+        'PixAI Tagger v0.9',
+        repo_id='deepghs/pixai-tagger-v0.9-onnx',
     ),
 }

@@ -47,6 +47,31 @@ class WaifuDiffusionInterrogator(AbsInterrogator):
 
         self.tags = pd.read_csv(tags_path)
 
+    def preprocess(self, input_image: Image.Image) -> np.ndarray:
+        if not hasattr(self, 'model') or self.model is None:
+            self.load()
+        _, height, _, _ = self.model.get_inputs()[0].shape
+
+        image = input_image.convert('RGBA')
+        new_image = Image.new('RGBA', image.size, 'WHITE')
+        new_image.paste(image, mask=image)
+        image = new_image.convert('RGB')
+        image = np.asarray(image)
+        # PIL RGB to OpenCV BGR
+        image = image[:, :, ::-1]
+        image = dbimutils.make_square(image, height)
+        image = dbimutils.smart_resize(image, height)
+        return image.astype(np.float32)
+
+    def _postprocess_output(self, confidents: np.ndarray) -> tuple[dict[str, float], dict[str, float]]:
+        if self.tags is None:
+            raise Exception("Tags not loading.")
+        tags = self.tags[:][['name']]
+        tags['confidents'] = confidents
+        ratings = dict(tags[:4].values)
+        tags = dict(tags[4:].values)
+        return ratings, tags
+
     def interrogate(
         self,
         input_image: Image.Image
@@ -54,46 +79,36 @@ class WaifuDiffusionInterrogator(AbsInterrogator):
         dict[str, float],  # rating confidents
         dict[str, float]  # tag confidents
     ]:
-        # init model
         if not hasattr(self, 'model') or self.model is None:
             self.load()
-
         if self.model is None:
             raise Exception("Model not loading.")
 
-        # convert an image to fit the model
-        _, height, _, _ = self.model.get_inputs()[0].shape
+        image = np.expand_dims(self.preprocess(input_image), 0)
 
-        # alpha to white
-        image = input_image.convert('RGBA')
-        new_image = Image.new('RGBA', image.size, 'WHITE')
-        new_image.paste(image, mask=image)
-        image = new_image.convert('RGB')
-        image = np.asarray(image)
-
-        # PIL RGB to OpenCV BGR
-        image = image[:, :, ::-1]
-
-        image = dbimutils.make_square(image, height)
-        image = dbimutils.smart_resize(image, height)
-        image = image.astype(np.float32)
-        image = np.expand_dims(image, 0)
-
-        # evaluate model
         input_name = self.model.get_inputs()[0].name
         label_name = self.model.get_outputs()[0].name
         confidents = self.model.run([label_name], {input_name: image})[0]
 
-        if self.tags is None:
-            raise Exception("Tags not loading.")
+        return self._postprocess_output(confidents[0])
 
-        tags = self.tags[:][['name']]
-        tags['confidents'] = confidents[0]
+    def interrogate_batch(
+        self,
+        images: list[Image.Image]
+    ) -> list[tuple[dict[str, float], dict[str, float]]]:
+        if not hasattr(self, 'model') or self.model is None:
+            self.load()
+        if self.model is None:
+            raise Exception("Model not loading.")
 
-        # first 4 items are for rating (general, sensitive, questionable, explicit)
-        ratings = dict(tags[:4].values)
+        batch = np.stack([self.preprocess(img) for img in images])
 
-        # rest are regular tags
-        tags = dict(tags[4:].values)
+        input_name = self.model.get_inputs()[0].name
+        label_name = self.model.get_outputs()[0].name
 
-        return ratings, tags
+        try:
+            confidents = self.model.run([label_name], {input_name: batch})[0]
+        except Exception:
+            return [self.interrogate(img) for img in images]
+
+        return [self._postprocess_output(confidents[i]) for i in range(len(images))]
