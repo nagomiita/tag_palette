@@ -87,13 +87,14 @@ def save_last_run(image_dir: Path, run_time: datetime) -> None:
 @dataclass
 class EagleImage:
     """Eagle ライブラリの1画像エントリ。"""
-    info_dir: Path          # {ID}.info ディレクトリ
-    image_path: Path        # 元画像ファイルパス
-    thumbnail_path: Path    # サムネイルパス ({name}_thumbnail.png)
-    metadata_path: Path     # metadata.json パス
-    eagle_id: str           # Eagle ID
-    name: str               # 画像名
-    ext: str                # 拡張子
+
+    info_dir: Path  # {ID}.info ディレクトリ
+    image_path: Path  # 元画像ファイルパス
+    thumbnail_path: Path  # サムネイルパス ({name}_thumbnail.png)
+    metadata_path: Path  # metadata.json パス
+    eagle_id: str  # Eagle ID
+    name: str  # 画像名
+    ext: str  # 拡張子
 
 
 def find_eagle_images(
@@ -149,15 +150,17 @@ def find_eagle_images(
 
         eagle_id = meta.get("id", info_dir.name.replace(".info", ""))
         thumbnail_path = info_dir / f"{name}_thumbnail.png"
-        images.append(EagleImage(
-            info_dir=info_dir,
-            image_path=image_path,
-            thumbnail_path=thumbnail_path,
-            metadata_path=metadata_path,
-            eagle_id=eagle_id,
-            name=name,
-            ext=ext,
-        ))
+        images.append(
+            EagleImage(
+                info_dir=info_dir,
+                image_path=image_path,
+                thumbnail_path=thumbnail_path,
+                metadata_path=metadata_path,
+                eagle_id=eagle_id,
+                name=name,
+                ext=ext,
+            )
+        )
 
     return images
 
@@ -176,16 +179,16 @@ def ensure_thumbnail(eagle_image: EagleImage) -> None:
             img.save(eagle_image.thumbnail_path, "PNG")
         logger.info("サムネイル生成: %s", eagle_image.thumbnail_path.name)
     except Exception as e:
-        logger.error(
-            "サムネイル生成失敗: %s -> %s", eagle_image.eagle_id, e
-        )
+        logger.error("サムネイル生成失敗: %s -> %s", eagle_image.eagle_id, e)
 
 
 # ── Eagle metadata.json への書き戻し ────────────────────
 
 
 def write_tags_to_eagle(
-    eagle_image: EagleImage, tags: dict[str, float], model_name: str,
+    eagle_image: EagleImage,
+    tags: dict[str, float],
+    model_name: str,
 ) -> None:
     """タグの日本語訳を Eagle の metadata.json の annotation に書き込み、
     tag_palette.json にタグ生データを保存する。"""
@@ -202,9 +205,7 @@ def write_tags_to_eagle(
         with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
     except Exception as e:
-        logger.error(
-            "metadata.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e
-        )
+        logger.error("metadata.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
 
     # 埋め込みベクトル生成
     embedding_b64 = ""
@@ -213,26 +214,26 @@ def write_tags_to_eagle(
         if embedding_bytes:
             embedding_b64 = embedding_to_base64(embedding_bytes)
     except Exception as e:
-        logger.error(
-            "埋め込み生成失敗: %s -> %s", eagle_image.eagle_id, e
-        )
+        logger.error("埋め込み生成失敗: %s -> %s", eagle_image.eagle_id, e)
 
     # tag_palette.json にタグ生データ保存
     try:
         tp_path = eagle_image.info_dir / "tag_palette.json"
         tp_data = {
+            "image_id": eagle_image.eagle_id,
+            "image_name": eagle_image.image_path.name,
+            "thumbnail_name": eagle_image.thumbnail_path.name,
+            "ext": eagle_image.ext,
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),
-            "embedding_blob": embedding_b64,
+            "embedding": embedding_b64,
             "generated_at": datetime.now().isoformat(),
         }
         with open(tp_path, "w", encoding="utf-8") as f:
             json.dump(tp_data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error(
-            "tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e
-        )
+        logger.error("tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
 
 
 # ── メイン ──────────────────────────────────────────────
@@ -243,17 +244,19 @@ def main() -> None:
         description="Eagle ライブラリの画像にタグを生成 (タスクスケジューラ用)"
     )
     parser.add_argument(
-        "--image-dir", type=Path, required=True,
+        "--image-dir",
+        type=Path,
+        required=True,
         help="Eagle ライブラリの images ディレクトリ",
     )
-    parser.add_argument(
-        "--log-file", type=Path, default=None, help="ログファイルパス"
-    )
+    parser.add_argument("--log-file", type=Path, default=None, help="ログファイルパス")
     parser.add_argument(
         "--model", default="wd-eva02-large-tagger-v3", help="使用するモデル名"
     )
     parser.add_argument(
-        "--force", action="store_true", help="全画像を再処理する (タグ付き画像もスキップしない)"
+        "--force",
+        action="store_true",
+        help="全画像を再処理する (タグ付き画像もスキップしない)",
     )
     args = parser.parse_args()
 
@@ -298,12 +301,12 @@ def main() -> None:
         logger.info("(%d/%d) %s", i, len(images), eagle_image.image_path.name)
         ensure_thumbnail(eagle_image)
         try:
-            tag_results = generate_tags(
-                eagle_image.image_path, model_name=args.model
-            )
+            tag_results = generate_tags(eagle_image.image_path, model_name=args.model)
             if tag_results:
                 write_tags_to_eagle(
-                    eagle_image, tag_results[0].tags, tag_results[0].model_name,
+                    eagle_image,
+                    tag_results[0].tags,
+                    tag_results[0].model_name,
                 )
                 processed += 1
         except Exception as e:
@@ -312,7 +315,10 @@ def main() -> None:
     elapsed = time.perf_counter() - start
     logger.info(
         "完了: %d/%d 件 (%.2fs, %.2fs/image)",
-        processed, len(images), elapsed, elapsed / max(len(images), 1),
+        processed,
+        len(images),
+        elapsed,
+        elapsed / max(len(images), 1),
     )
 
     # キャッシュ保存
