@@ -25,7 +25,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from tag_palette import generate_tags, load_translation_cache, save_translation_cache, translate_tag
+from tag_palette import generate_tags, load_translation_cache, save_translation_cache, translate_tags
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 THUMBNAIL_SIZE = (300, 300)
@@ -182,7 +182,7 @@ def write_tags_to_eagle(eagle_image: EagleImage, tags: dict[str, float]) -> None
             meta = json.load(f)
 
         # 信頼度順のタグを日本語訳してカンマ区切り文字列にする
-        ja_tags = [translate_tag(tag) for tag in tags]
+        ja_tags = translate_tags(list(tags.keys()))
         meta["annotation"] = ", ".join(ja_tags)
 
         with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:

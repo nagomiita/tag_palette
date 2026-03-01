@@ -12,6 +12,7 @@ from tag_palette.translations import (
     save_translation_cache,
     text_translate,
     translate_tag,
+    translate_tags,
 )
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "get_translation_for_tag",
     "text_translate",
     "translate_tag",
+    "translate_tags",
     "load_translation_cache",
     "save_translation_cache",
     "is_japanese",

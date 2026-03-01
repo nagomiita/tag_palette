@@ -51,32 +51,64 @@ def save_translation_cache(cache_path: Path | None = None) -> None:
 
 
 def translate_tag(tag_name: str) -> str:
-    """タグを日本語に翻訳する。
+    """タグを日本語に翻訳する (単体用、CSV/キャッシュのみ)。
 
-    解決順序: danbooru CSV → 翻訳キャッシュ → Google 翻訳 API → フォールバック
+    Google API が必要な場合は translate_tags() を使うこと。
     """
-    # 1. danbooru CSV から取得
     result = get_translation_for_tag(tag_name)
     if result:
         return result[0]
-
-    # 2. キャッシュにあればそれを返す
     if tag_name in _translation_cache:
         return _translation_cache[tag_name]
+    return tag_name.replace("_", " ")
 
-    # 3. Google 翻訳 API で翻訳してキャッシュに保存
-    readable = tag_name.replace("_", " ")
-    try:
-        ja = asyncio.run(text_translate(readable, src="en", dest="ja"))
-        if ja:
-            _translation_cache[tag_name] = ja
-            return ja
-    except Exception as e:
-        logger.debug("Google翻訳失敗: %s -> %s", tag_name, e)
 
-    # 4. フォールバック
-    _translation_cache[tag_name] = readable
-    return readable
+def translate_tags(tag_names: list[str]) -> list[str]:
+    """タグリストを日本語に一括翻訳する。
+
+    解決順序: danbooru CSV → 翻訳キャッシュ → Google 翻訳 API → フォールバック
+    Google API 呼び出しは1つのイベントループ内でまとめて実行する。
+    """
+    results: list[str] = []
+    need_api: list[tuple[int, str, str]] = []  # (index, tag_name, readable)
+
+    for tag_name in tag_names:
+        # 1. danbooru CSV
+        csv_result = get_translation_for_tag(tag_name)
+        if csv_result:
+            results.append(csv_result[0])
+            continue
+
+        # 2. キャッシュ (日本語の値のみ受け入れ)
+        if tag_name in _translation_cache and is_japanese(_translation_cache[tag_name]):
+            results.append(_translation_cache[tag_name])
+            continue
+
+        # 3. API で翻訳が必要
+        readable = tag_name.replace("_", " ")
+        results.append(readable)  # プレースホルダー
+        need_api.append((len(results) - 1, tag_name, readable))
+
+    # Google 翻訳 API を一括実行
+    if need_api:
+        async def _batch_translate() -> None:
+            translator = Translator()
+            for idx, tag, readable in need_api:
+                try:
+                    api_result = await translator.translate(readable, src="en", dest="ja")
+                    if api_result and api_result.text:
+                        ja = _clean_translation(api_result.text)
+                        _translation_cache[tag] = ja
+                        results[idx] = ja
+                    else:
+                        _translation_cache[tag] = readable
+                except Exception as e:
+                    logger.debug("Google翻訳失敗: %s -> %s", tag, e)
+                    _translation_cache[tag] = readable
+
+        asyncio.run(_batch_translate())
+
+    return results
 
 
 def _get_csv_df():
@@ -156,9 +188,6 @@ def get_translation_for_tag(
     return (translated_name, note)
 
 
-_translator = Translator()
-
-
 async def text_translate(text: str, src: str = "en", dest: str = "ja") -> str | None:
     """
     Google 翻訳 API でテキストを翻訳する (ネットワーク接続が必要)。
@@ -171,7 +200,8 @@ async def text_translate(text: str, src: str = "en", dest: str = "ja") -> str | 
     Returns:
         翻訳結果の文字列。
     """
-    result = await _translator.translate(text, src=src, dest=dest)
+    translator = Translator()
+    result = await translator.translate(text, src=src, dest=dest)
     if result and result.text:
         return _clean_translation(result.text)
     raise ValueError("Translation returned None")
