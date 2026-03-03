@@ -28,9 +28,7 @@ def _default_cache_path() -> Path:
     """デフォルトのキャッシュファイルパスを返す (danbooru_tags.csv と同じディレクトリ)。"""
     import importlib.resources
 
-    return Path(
-        str(importlib.resources.files("tag_palette") / "data" / _CACHE_FILE)
-    )
+    return Path(str(importlib.resources.files("tag_palette") / "data" / _CACHE_FILE))
 
 
 def load_tag_embeddings(cache_path: Path | None = None) -> None:
