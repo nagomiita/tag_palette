@@ -313,17 +313,13 @@ def main() -> None:
         logger.info("(%d/%d) %s", i, len(images), eagle_image.image_path.name)
         ensure_thumbnail(eagle_image)
 
-        # タグ生成対象のパスを決定 (非画像ファイルはサムネイルを使用)
-        if is_image_file(eagle_image):
-            tag_source = eagle_image.image_path
-        elif eagle_image.thumbnail_path.exists():
-            tag_source = eagle_image.thumbnail_path
-        else:
+        # サムネイルが無ければスキップ
+        if not eagle_image.thumbnail_path.exists():
             logger.warning("サムネイルが見つかりません (スキップ): %s", eagle_image.eagle_id)
             continue
 
         try:
-            tag_results = generate_tags(tag_source, model_name=args.model)
+            tag_results = generate_tags(eagle_image.thumbnail_path, model_name=args.model)
             if tag_results:
                 write_tags_to_eagle(
                     eagle_image,
