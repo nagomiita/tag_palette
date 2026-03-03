@@ -32,10 +32,12 @@ packages = ["src/tag_palette"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
+# PyTorch CPU 版を使用 (sentence-transformers 用)
+# タグ生成は onnxruntime-gpu が GPU を使用
 [[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu124" }]
+torch = [{ index = "pytorch-cpu" }]
