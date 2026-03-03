@@ -37,6 +37,7 @@ from tag_palette import (
     translate_tags,
 )
 from tag_palette._csv_reader import load_clean_tag_csv
+from tag_palette.genre import _get_genre_df
 
 _danbooru_df = None
 
@@ -57,6 +58,16 @@ def detect_genre(tags: dict[str, float]) -> str | None:
             if genre:
                 return genre
     return None
+
+
+def get_genre_ja(genre_key: str) -> str:
+    """genre.csv からジャンルの日本語名を取得する。見つからなければキーをそのまま返す。"""
+    genre_df = _get_genre_df()
+    if genre_key in genre_df.index:
+        ja = str(genre_df.loc[genre_key, "ja"]).strip()
+        if ja:
+            return ja
+    return genre_key
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
@@ -248,12 +259,23 @@ def write_tags_to_eagle(
     tag_names = list(tags.keys())
     ja_tags = translate_tags(tag_names)
 
-    # Eagle metadata.json に annotation 書き込み
+    # ジャンル検出
+    genre = detect_genre(tags)
+
+    # Eagle metadata.json に annotation と tags 書き込み
     try:
         with open(eagle_image.metadata_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
 
         meta["annotation"] = ", ".join(ja_tags)
+
+        # genre が見つかれば Eagle の tags に日本語名を追加
+        if genre:
+            eagle_tags: list[str] = meta.get("tags", [])
+            genre_ja = get_genre_ja(genre)
+            if genre_ja not in eagle_tags:
+                eagle_tags.append(genre_ja)
+                meta["tags"] = eagle_tags
 
         with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
@@ -278,7 +300,7 @@ def write_tags_to_eagle(
             "name": eagle_image.image_path.name,
             "thumbnail_name": eagle_image.thumbnail_path.name,
             "ext": eagle_image.ext,
-            "genre": detect_genre(tags),
+            "genre": genre,
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),
