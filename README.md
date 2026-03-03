@@ -137,6 +137,69 @@ for result in results:
         print()
 ```
 
+## バッチスクリプト
+
+### main.py — Eagle ライブラリのタグ一括生成
+
+Eagle ライブラリの images ディレクトリを走査し、各コンテンツにタグを自動生成して metadata.json と tag_palette.json に書き戻す。
+
+```bash
+# 基本実行 (前回以降の新規コンテンツのみ)
+uv run python main.py --image-dir /path/to/eagle.library/images
+
+# モデル指定
+uv run python main.py --image-dir /path/to/eagle.library/images --model wd-eva02-large-tagger-v3
+
+# 全件再処理 (既処理スキップを無効化)
+uv run python main.py --image-dir /path/to/eagle.library/images --force
+
+# ログファイル出力
+uv run python main.py --image-dir /path/to/eagle.library/images --log-file output.log
+```
+
+| 引数 | 必須 | デフォルト | 説明 |
+|------|------|-----------|------|
+| `--image-dir` | Yes | - | Eagle ライブラリの images ディレクトリ |
+| `--model` | No | `wd-eva02-large-tagger-v3` | タグ生成モデル名 |
+| `--force` | No | `false` | 既処理スキップを無効化し全件再処理 |
+| `--log-file` | No | なし | ログ出力先ファイル |
+
+画像・GIF はサムネイルを PIL で生成、動画 (MP4 等) は ffmpeg で先頭フレームを抽出してサムネイルを生成し、そのサムネイルでタグ生成を行う。
+
+### cleanup_orphans.py — 孤立ディレクトリの退避
+
+オリジナルファイルが存在しない .info ディレクトリを検出し、退避先に移動する。
+
+```bash
+# dry-run で対象を確認 (移動はしない)
+uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images --dry-run
+
+# 実行 (デフォルト退避先: eagle.library/_orphans/)
+uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images
+
+# 退避先を指定
+uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images --dest /path/to/orphans
+```
+
+| 引数 | 必須 | デフォルト | 説明 |
+|------|------|-----------|------|
+| `--image-dir` | Yes | - | Eagle ライブラリの images ディレクトリ |
+| `--dest` | No | `eagle.library/_orphans` | 退避先ディレクトリ |
+| `--dry-run` | No | `false` | 対象を表示するのみ (移動しない) |
+
+### Windows での実行
+
+パスを Windows 形式にして同様に実行できる。動画サムネイル生成には ffmpeg のインストールが必要。
+
+```powershell
+# ffmpeg インストール
+winget install ffmpeg
+
+# 実行
+uv run python main.py --image-dir "D:\eagle.library\images"
+uv run python cleanup_orphans.py --image-dir "D:\eagle.library\images" --dry-run
+```
+
 ## パッケージデータ
 
 `src/tag_palette/data/danbooru_tags.csv` にタグメタデータ CSV を配置してください。カテゴリ分類・翻訳・ジャンル抽出に使用されます。
