@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -25,8 +26,9 @@ from pathlib import Path
 
 from PIL import Image
 
+import numpy as np
+
 from tag_palette import (
-    embedding_to_base64,
     generate_tags,
     load_tag_embeddings,
     load_translation_cache,
@@ -177,19 +179,34 @@ def is_image_file(eagle_image: EagleImage) -> bool:
 
 
 def ensure_thumbnail(eagle_image: EagleImage) -> None:
-    """サムネイルが存在しなければ生成する (画像ファイルのみ)。"""
+    """サムネイルが存在しなければ生成する。画像は PIL、動画は ffmpeg を使用。"""
     if eagle_image.thumbnail_path.exists():
         return
-    if not is_image_file(eagle_image):
-        return
-    try:
-        with Image.open(eagle_image.image_path) as img:
-            img = img.convert("RGB")
-            img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
-            img.save(eagle_image.thumbnail_path, "PNG")
-        logger.info("サムネイル生成: %s", eagle_image.thumbnail_path.name)
-    except Exception as e:
-        logger.error("サムネイル生成失敗: %s -> %s", eagle_image.eagle_id, e)
+    if is_image_file(eagle_image):
+        try:
+            with Image.open(eagle_image.image_path) as img:
+                img = img.convert("RGB")
+                img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+                img.save(eagle_image.thumbnail_path, "PNG")
+            logger.info("サムネイル生成 (画像): %s", eagle_image.thumbnail_path.name)
+        except Exception as e:
+            logger.error("サムネイル生成失敗: %s -> %s", eagle_image.eagle_id, e)
+    else:
+        try:
+            w, h = THUMBNAIL_SIZE
+            subprocess.run(
+                [
+                    "ffmpeg", "-i", str(eagle_image.image_path),
+                    "-vframes", "1",
+                    "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease",
+                    str(eagle_image.thumbnail_path),
+                ],
+                capture_output=True,
+                check=True,
+            )
+            logger.info("サムネイル生成 (動画): %s", eagle_image.thumbnail_path.name)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.error("動画サムネイル生成失敗: %s -> %s", eagle_image.eagle_id, e)
 
 
 # ── Eagle metadata.json への書き戻し ────────────────────
@@ -217,12 +234,13 @@ def write_tags_to_eagle(
     except Exception as e:
         logger.error("metadata.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
 
-    # 埋め込みベクトル生成
-    embedding_b64 = ""
+    # 埋め込みベクトル生成 → .npy 保存
     try:
         embedding_bytes = tags_to_embedding(tags)
         if embedding_bytes:
-            embedding_b64 = embedding_to_base64(embedding_bytes)
+            embedding_arr = np.frombuffer(embedding_bytes, dtype=np.float32)
+            npy_path = eagle_image.info_dir / "embedding.npy"
+            np.save(npy_path, embedding_arr)
     except Exception as e:
         logger.error("埋め込み生成失敗: %s -> %s", eagle_image.eagle_id, e)
 
@@ -237,7 +255,6 @@ def write_tags_to_eagle(
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),
-            "embedding": embedding_b64,
             "generated_at": datetime.now().isoformat(),
         }
         with open(tp_path, "w", encoding="utf-8") as f:
