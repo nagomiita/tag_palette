@@ -39,7 +39,7 @@ from tag_palette import (
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 THUMBNAIL_SIZE = (300, 300)
-STATE_FILE = Path(".last_run")
+STATE_FILE = Path("last_run.txt")
 SAVE_INTERVAL = 100
 
 logger = logging.getLogger(__name__)
