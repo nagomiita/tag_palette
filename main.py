@@ -29,6 +29,7 @@ from PIL import Image
 
 from tag_palette import (
     generate_tags,
+    is_sensitive,
     load_tag_embeddings,
     load_translation_cache,
     save_tag_embeddings,
@@ -295,12 +296,14 @@ def write_tags_to_eagle(
     # tag_palette.json にタグ生データ保存
     try:
         tp_path = eagle_image.info_dir / "tag_palette.json"
+        sensitive = any(is_sensitive(t) for t in tag_names)
         tp_data = {
             "id": eagle_image.eagle_id,
             "name": eagle_image.image_path.name,
             "thumbnail_name": eagle_image.thumbnail_path.name,
             "ext": eagle_image.ext,
             "genre": genre,
+            "is_sensitive": sensitive,
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),

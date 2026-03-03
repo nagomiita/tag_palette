@@ -49,6 +49,7 @@ class TagPaletteEntry:
     ext: str
     model_name: str
     genre: str | None
+    is_sensitive: bool
     tags: dict[str, float]  # {英語タグ: confidence}
     tags_ja: dict[str, str]  # {英語タグ: 日本語名}
     generated_at: str
@@ -190,6 +191,7 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
                 ext=data.get("ext", ""),
                 model_name=data.get("model_name", ""),
                 genre=data.get("genre"),
+                is_sensitive=bool(data.get("is_sensitive", False)),
                 tags=data.get("tags", {}),
                 tags_ja=data.get("tags_ja", {}),
                 generated_at=data.get("generated_at", ""),
@@ -372,9 +374,10 @@ def _do_import(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
                                    is_favorite, is_sensitive, view_count, media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, 0, 0, 0, 'IMAGE', ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, 0, 'IMAGE', ?, ?)
                 """,
-                (media_id, file_path, entry.image_name, entry.ext, thumbnail_path, genre_id, now),
+                (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
+                 int(entry.is_sensitive), genre_id, now),
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1
