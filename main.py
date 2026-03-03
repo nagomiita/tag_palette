@@ -14,6 +14,11 @@ Usage:
 
 from __future__ import annotations
 
+# PyTorch の cuDNN ロードエラー回避: 他のインポートより前に設定
+import os as _os
+
+_os.environ.setdefault("TORCH_CUDNN_V8_API_DISABLED", "1")
+
 import argparse
 import json
 import logging
@@ -151,6 +156,16 @@ def find_eagle_images(
         if not info_dir.is_dir() or not info_dir.name.endswith(".info"):
             continue
 
+        # フォルダ作成日時チェック (= Eagle へのインポート日時) を最初に行う
+        st = info_dir.stat()
+        ctime = getattr(st, "st_birthtime", st.st_ctime)
+        if ctime < cutoff:
+            continue
+
+        # 既処理スキップ (tag_palette.json が既にある場合)
+        if skip_processed and (info_dir / "tag_palette.json").exists():
+            continue
+
         metadata_path = info_dir / "metadata.json"
         if not metadata_path.exists():
             continue
@@ -164,16 +179,6 @@ def find_eagle_images(
 
         # 削除済みはスキップ
         if meta.get("isDeleted", False):
-            continue
-
-        # 既処理スキップ (tag_palette.json が既にある場合)
-        if skip_processed and (info_dir / "tag_palette.json").exists():
-            continue
-
-        # フォルダ作成日時チェック (= Eagle へのインポート日時)
-        st = info_dir.stat()
-        ctime = getattr(st, "st_birthtime", st.st_ctime)
-        if ctime < cutoff:
             continue
 
         # 画像ファイルを特定
