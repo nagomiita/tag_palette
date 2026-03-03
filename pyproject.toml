@@ -8,11 +8,12 @@ dependencies = [
     "googletrans>=4.0.2",
     "huggingface-hub>=0.28.1",
     "numpy>=1.26.4",
-    "onnxruntime>=1.20.1",
+    "onnxruntime-gpu>=1.20.1",
     "opencv-python-headless>=4.11.0",
     "pandas>=2.3.0",
     "pillow>=11.2.1",
     "sentence-transformers>=3.0.0",
+    "torch>=2.6.0",
 ]
 
 [project.optional-dependencies]
@@ -30,3 +31,11 @@ packages = ["src/tag_palette"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124" }]
