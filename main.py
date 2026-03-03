@@ -148,10 +148,7 @@ def find_eagle_images(
 
         image_path = info_dir / f"{name}.{ext}"
         if not image_path.exists():
-            logger.warning("画像ファイルが見つかりません: %s", image_path)
-            continue
-
-        if f".{ext}".lower() not in IMAGE_EXTENSIONS:
+            logger.warning("ファイルが見つかりません: %s", image_path)
             continue
 
         eagle_id = meta.get("id", info_dir.name.replace(".info", ""))
@@ -174,9 +171,16 @@ def find_eagle_images(
 # ── サムネイル生成 ──────────────────────────────────────
 
 
+def is_image_file(eagle_image: EagleImage) -> bool:
+    """画像ファイルかどうかを判定する。"""
+    return f".{eagle_image.ext}".lower() in IMAGE_EXTENSIONS
+
+
 def ensure_thumbnail(eagle_image: EagleImage) -> None:
-    """サムネイルが存在しなければ生成する。"""
+    """サムネイルが存在しなければ生成する (画像ファイルのみ)。"""
     if eagle_image.thumbnail_path.exists():
+        return
+    if not is_image_file(eagle_image):
         return
     try:
         with Image.open(eagle_image.image_path) as img:
@@ -308,8 +312,18 @@ def main() -> None:
     for i, eagle_image in enumerate(images, 1):
         logger.info("(%d/%d) %s", i, len(images), eagle_image.image_path.name)
         ensure_thumbnail(eagle_image)
+
+        # タグ生成対象のパスを決定 (非画像ファイルはサムネイルを使用)
+        if is_image_file(eagle_image):
+            tag_source = eagle_image.image_path
+        elif eagle_image.thumbnail_path.exists():
+            tag_source = eagle_image.thumbnail_path
+        else:
+            logger.warning("サムネイルが見つかりません (スキップ): %s", eagle_image.eagle_id)
+            continue
+
         try:
-            tag_results = generate_tags(eagle_image.image_path, model_name=args.model)
+            tag_results = generate_tags(tag_source, model_name=args.model)
             if tag_results:
                 write_tags_to_eagle(
                     eagle_image,
