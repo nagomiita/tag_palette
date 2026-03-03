@@ -24,9 +24,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image
-
 import numpy as np
+from PIL import Image
 
 from tag_palette import (
     generate_tags,
@@ -196,9 +195,13 @@ def ensure_thumbnail(eagle_image: EagleImage) -> None:
             w, h = THUMBNAIL_SIZE
             subprocess.run(
                 [
-                    "ffmpeg", "-i", str(eagle_image.image_path),
-                    "-vframes", "1",
-                    "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease",
+                    "ffmpeg",
+                    "-i",
+                    str(eagle_image.image_path),
+                    "-vframes",
+                    "1",
+                    "-vf",
+                    f"scale={w}:{h}:force_original_aspect_ratio=decrease",
                     str(eagle_image.thumbnail_path),
                 ],
                 capture_output=True,
@@ -332,11 +335,15 @@ def main() -> None:
 
         # サムネイルが無ければスキップ
         if not eagle_image.thumbnail_path.exists():
-            logger.warning("サムネイルが見つかりません (スキップ): %s", eagle_image.eagle_id)
+            logger.warning(
+                "サムネイルが見つかりません (スキップ): %s", eagle_image.eagle_id
+            )
             continue
 
         try:
-            tag_results = generate_tags(eagle_image.thumbnail_path, model_name=args.model)
+            tag_results = generate_tags(
+                eagle_image.thumbnail_path, model_name=args.model
+            )
             if tag_results:
                 write_tags_to_eagle(
                     eagle_image,
