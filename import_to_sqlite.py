@@ -315,39 +315,11 @@ def _do_import(
         if csv_name in csv_id_to_db_id:
             cat_code_to_id[code] = csv_id_to_db_id[csv_name]
 
-    # ── 1. 既存 tag (id ベース) キャッシュ ────────────────────
+    # ── 1. 既存キャッシュ読み込み ────────────────────────────
     existing_tag_ids: set[str] = set()
     for row in conn.execute("SELECT id FROM tags"):
         existing_tag_ids.add(row[0])
 
-    # ── 1a. translation_cache からタグマスタ投入 ──────────────
-    #    id=英語タグ名, name=日本語名
-    tags_inserted = 0
-    for tag_en, tag_ja in trans_cache.items():
-        if tag_en in existing_tag_ids:
-            continue
-        db_tag = danbooru.get(tag_en)
-        category_id = None
-        if db_tag and db_tag.category in cat_code_to_id:
-            category_id = cat_code_to_id[db_tag.category]
-        conn.execute(
-            """
-            INSERT INTO tags (id, name, category_id, is_favorite, is_sensitive, disable, created_at)
-            VALUES (?, ?, ?, 0, 0, 0, ?)
-            """,
-            (tag_en, tag_ja, category_id, now),
-        )
-        existing_tag_ids.add(tag_en)
-        tags_inserted += 1
-    if tags_inserted:
-        logger.info("translation_cache からタグ投入: %d 件", tags_inserted)
-
-    # ── 2. 既存 media (file_path → id) キャッシュ ─────────────
-    media_path_to_id: dict[str, str] = {}
-    for row in conn.execute("SELECT id, file_path FROM media"):
-        media_path_to_id[row[1]] = row[0]
-
-    # ── 3. 既存 tag_genres キャッシュ (tag_id, genre_id) ───────
     existing_tag_genres: set[tuple[str, str]] = set()
     for row in conn.execute("SELECT tag_id, genre_id FROM tag_genres"):
         existing_tag_genres.add((row[0], row[1]))
@@ -359,6 +331,68 @@ def _do_import(
         "media_created": 0,
         "media_tags_created": 0,
     }
+
+    # ── 1a. danbooru_tags からタグマスタ投入 (メイン) ─────────
+    #    id=英語タグ名, name=日本語名, category_id, tag_genres
+    danbooru_inserted = 0
+    for tag_en, db_tag in danbooru.items():
+        if tag_en in existing_tag_ids:
+            continue
+        category_id = None
+        if db_tag.category in cat_code_to_id:
+            category_id = cat_code_to_id[db_tag.category]
+        tag_ja = db_tag.ja or tag_en
+        conn.execute(
+            """
+            INSERT INTO tags (id, name, category_id, is_favorite, is_sensitive, disable, created_at)
+            VALUES (?, ?, ?, 0, 0, 0, ?)
+            """,
+            (tag_en, tag_ja, category_id, now),
+        )
+        existing_tag_ids.add(tag_en)
+        danbooru_inserted += 1
+        # tag_genres リレーション
+        if db_tag.genre and db_tag.genre in genre_csv:
+            tg_key = (tag_en, db_tag.genre)
+            if tg_key not in existing_tag_genres:
+                conn.execute(
+                    "INSERT INTO tag_genres (id, tag_id, genre_id, created_at) VALUES (?, ?, ?, ?)",
+                    (_new_uuid(), tag_en, db_tag.genre, now),
+                )
+                existing_tag_genres.add(tg_key)
+                stats["tag_genres_created"] += 1
+    if danbooru_inserted:
+        logger.info("danbooru_tags からタグ投入: %d 件", danbooru_inserted)
+
+    # ── 1b. translation_cache で補完 ─────────────────────────
+    #    danbooru にないタグを追加 + 日本語名を上書き更新
+    tc_inserted = 0
+    tc_updated = 0
+    for tag_en, tag_ja in trans_cache.items():
+        if tag_en not in existing_tag_ids:
+            conn.execute(
+                """
+                INSERT INTO tags (id, name, category_id, is_favorite, is_sensitive, disable, created_at)
+                VALUES (?, ?, NULL, 0, 0, 0, ?)
+                """,
+                (tag_en, tag_ja, now),
+            )
+            existing_tag_ids.add(tag_en)
+            tc_inserted += 1
+        else:
+            # danbooru の ja が空の場合、translation_cache で上書き
+            conn.execute(
+                "UPDATE tags SET name = ? WHERE id = ? AND (name IS NULL OR name = '' OR name = ?)",
+                (tag_ja, tag_en, tag_en),
+            )
+            tc_updated += 1
+    if tc_inserted or tc_updated:
+        logger.info("translation_cache: 追加 %d 件, 日本語名更新 %d 件", tc_inserted, tc_updated)
+
+    # ── 2. 既存 media (file_path → id) キャッシュ ─────────────
+    media_path_to_id: dict[str, str] = {}
+    for row in conn.execute("SELECT id, file_path FROM media"):
+        media_path_to_id[row[1]] = row[0]
 
     for entry in entries:
         # ── media ─────────────────────────────────────────────
