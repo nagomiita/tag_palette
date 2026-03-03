@@ -36,32 +36,6 @@ def load_sensitive_tags(csv_path: Path | None = None) -> None:
     logger.info("センシティブタグ読み込み: %d 件", len(_sensitive_tags))
 
 
-def save_sensitive_tags(csv_path: Path | None = None) -> None:
-    """現在のセンシティブタグ一覧を CSV に保存する。"""
-    path = csv_path or _default_csv_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tags = _sensitive_tags or frozenset()
-    with open(path, "w", encoding="utf-8") as f:
-        for tag in sorted(tags):
-            f.write(tag + "\n")
-    logger.info("センシティブタグ保存: %d 件", len(tags))
-
-
-def add_sensitive_tag(tag_name: str) -> None:
-    """センシティブタグを追加する。"""
-    global _sensitive_tags
-    if _sensitive_tags is None:
-        load_sensitive_tags()
-    _sensitive_tags = _sensitive_tags | frozenset({tag_name.lower()})
-
-
-def remove_sensitive_tag(tag_name: str) -> None:
-    """センシティブタグを削除する。"""
-    global _sensitive_tags
-    if _sensitive_tags is None:
-        load_sensitive_tags()
-    _sensitive_tags = _sensitive_tags - frozenset({tag_name.lower()})
-
 
 def is_sensitive(tag_name: str) -> bool:
     """タグ名がセンシティブタグに該当するか判定する。"""

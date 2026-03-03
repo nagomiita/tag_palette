@@ -10,11 +10,8 @@ from tag_palette.embedding import (
 )
 from tag_palette.genre import get_genres
 from tag_palette.sensitive import (
-    add_sensitive_tag,
     is_sensitive,
     load_sensitive_tags,
-    remove_sensitive_tag,
-    save_sensitive_tags,
 )
 from tag_palette.tagger import TagResult, generate_tags, generate_tags_batch
 from tag_palette.translations import (
@@ -56,7 +53,4 @@ __all__ = [
     # Sensitive content
     "is_sensitive",
     "load_sensitive_tags",
-    "save_sensitive_tags",
-    "add_sensitive_tag",
-    "remove_sensitive_tag",
 ]
