@@ -368,7 +368,7 @@ def _do_import(
         if file_path in media_path_to_id:
             media_id = media_path_to_id[file_path]
         else:
-            media_id = _new_uuid()
+            media_id = entry.image_id
             genre_id = entry.genre if entry.genre and entry.genre in genre_csv else None
             conn.execute(
                 """
