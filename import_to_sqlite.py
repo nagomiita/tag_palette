@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tag_palette import is_sensitive
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent / "src" / "tag_palette" / "data"
@@ -342,12 +344,13 @@ def _do_import(
         if db_tag.category in cat_code_to_id:
             category_id = cat_code_to_id[db_tag.category]
         tag_ja = db_tag.ja or tag_en
+        sensitive = int(is_sensitive(tag_en))
         conn.execute(
             """
             INSERT INTO tags (id, name, category_id, is_favorite, is_sensitive, disable, created_at)
-            VALUES (?, ?, ?, 0, 0, 0, ?)
+            VALUES (?, ?, ?, 0, ?, 0, ?)
             """,
-            (tag_en, tag_ja, category_id, now),
+            (tag_en, tag_ja, category_id, sensitive, now),
         )
         existing_tag_ids.add(tag_en)
         danbooru_inserted += 1
@@ -370,12 +373,13 @@ def _do_import(
     tc_updated = 0
     for tag_en, tag_ja in trans_cache.items():
         if tag_en not in existing_tag_ids:
+            sensitive = int(is_sensitive(tag_en))
             conn.execute(
                 """
                 INSERT INTO tags (id, name, category_id, is_favorite, is_sensitive, disable, created_at)
-                VALUES (?, ?, NULL, 0, 0, 0, ?)
+                VALUES (?, ?, NULL, 0, ?, 0, ?)
                 """,
-                (tag_en, tag_ja, now),
+                (tag_en, tag_ja, sensitive, now),
             )
             existing_tag_ids.add(tag_en)
             tc_inserted += 1
@@ -431,16 +435,17 @@ def _do_import(
             tag_id = tag_en
 
             if tag_id not in existing_tag_ids:
-                # translation_cache に無かったタグ → 新規追加
+                # danbooru / translation_cache に無かったタグ → 新規追加
                 category_id = None
                 if db_tag and db_tag.category in cat_code_to_id:
                     category_id = cat_code_to_id[db_tag.category]
+                sensitive = int(is_sensitive(tag_id))
                 conn.execute(
                     """
                     INSERT INTO tags (id, name, category_id, is_favorite, is_sensitive, disable, created_at)
-                    VALUES (?, ?, ?, 0, 0, 0, ?)
+                    VALUES (?, ?, ?, 0, ?, 0, ?)
                     """,
-                    (tag_id, tag_ja, category_id, now),
+                    (tag_id, tag_ja, category_id, sensitive, now),
                 )
                 existing_tag_ids.add(tag_id)
                 stats["tags_created"] += 1
