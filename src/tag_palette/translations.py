@@ -116,8 +116,7 @@ def _get_csv_df():
     if _csv_df is None:
         from tag_palette._csv_reader import load_clean_tag_csv
 
-        df = load_clean_tag_csv(require_alias=True)
-        _csv_df = df[df["alias"].str.strip() != ""]
+        _csv_df = load_clean_tag_csv(require_ja=False)
     return _csv_df
 
 
@@ -135,7 +134,8 @@ def get_translation_for_tag(
     tag_name: str, language: str = "ja"
 ) -> tuple[str, str] | None:
     """
-    CSVのalias情報からタグの日本語翻訳を取得する。
+    CSV の ja カラムからタグの日本語翻訳を取得する。
+    ja が空の場合は memo カラムから日本語候補を探す。
 
     Parameters:
         tag_name: 英語タグ名
@@ -150,15 +150,22 @@ def get_translation_for_tag(
         logger.debug("タグ '%s' はCSVに存在しません。スキップします。", tag_name)
         return None
 
-    row = csv_df.loc[tag_name]
-    alias_text = row["alias"]
-    alias_list = [a.strip() for a in alias_text.split(",") if a.strip()]
-
     if language != "ja":
         logger.debug("日本語以外の言語(%s)はまだサポートされていません。", language)
         return None
 
-    jp_candidates = [a for a in alias_list if is_japanese(a)]
+    row = csv_df.loc[tag_name]
+
+    # 1. ja カラムを優先
+    ja_text = str(row.get("ja", "")).strip()
+    if ja_text:
+        memo_text = str(row.get("memo", ""))
+        return (ja_text, memo_text)
+
+    # 2. memo カラムから日本語候補を探す
+    memo_text = str(row.get("memo", ""))
+    memo_list = [a.strip() for a in memo_text.split(",") if a.strip()]
+    jp_candidates = [a for a in memo_list if is_japanese(a)]
 
     translated_name = None
     if jp_candidates:
@@ -183,9 +190,7 @@ def get_translation_for_tag(
         return None
 
     logger.debug("タグ '%s' → 日本語候補: %s", tag_name, translated_name)
-    note = alias_text
-
-    return (translated_name, note)
+    return (translated_name, memo_text)
 
 
 async def text_translate(text: str, src: str = "en", dest: str = "ja") -> str | None:

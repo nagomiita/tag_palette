@@ -36,6 +36,28 @@ from tag_palette import (
     tags_to_embedding,
     translate_tags,
 )
+from tag_palette._csv_reader import load_clean_tag_csv
+
+_danbooru_df = None
+
+
+def _get_danbooru_df():
+    global _danbooru_df
+    if _danbooru_df is None:
+        _danbooru_df = load_clean_tag_csv(require_ja=False)
+    return _danbooru_df
+
+
+def detect_genre(tags: dict[str, float]) -> str | None:
+    """タグ辞書から最も信頼度の高いタグのジャンルを返す。見つからなければ None。"""
+    df = _get_danbooru_df()
+    for tag_name in sorted(tags, key=tags.get, reverse=True):
+        if tag_name in df.index:
+            genre = str(df.loc[tag_name, "genre"]).strip()
+            if genre:
+                return genre
+    return None
+
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 THUMBNAIL_SIZE = (300, 300)
@@ -110,7 +132,7 @@ def find_eagle_images(
     - metadata.json を読み取り、isDeleted=true / 既にタグ付き をスキップ
     - since 以降に更新されたもののみ対象 (since=None なら全件)
     """
-    cutoff_ms = int(since.timestamp() * 1000) if since else 0
+    cutoff = since.timestamp() if since else 0
 
     images: list[EagleImage] = []
     for info_dir in sorted(image_dir.iterdir()):
@@ -136,9 +158,10 @@ def find_eagle_images(
         if skip_processed and (info_dir / "tag_palette.json").exists():
             continue
 
-        # 更新時刻チェック (Eagle の mtime はミリ秒)
-        mtime = meta.get("mtime", 0)
-        if mtime <= cutoff_ms:
+        # フォルダ作成日時チェック (= Eagle へのインポート日時)
+        st = info_dir.stat()
+        ctime = getattr(st, "st_birthtime", st.st_ctime)
+        if ctime < cutoff:
             continue
 
         # 画像ファイルを特定
@@ -251,10 +274,11 @@ def write_tags_to_eagle(
     try:
         tp_path = eagle_image.info_dir / "tag_palette.json"
         tp_data = {
-            "image_id": eagle_image.eagle_id,
-            "image_name": eagle_image.image_path.name,
+            "id": eagle_image.eagle_id,
+            "name": eagle_image.image_path.name,
             "thumbnail_name": eagle_image.thumbnail_path.name,
             "ext": eagle_image.ext,
+            "genre": detect_genre(tags),
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),
