@@ -19,8 +19,8 @@ def _get_model():
     if _model is None:
         from sentence_transformers import SentenceTransformer
 
-        _model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
-        logger.info("SentenceTransformer モデルをロードしました")
+        _model = SentenceTransformer("paraphrase-MiniLM-L6-v2", device="cpu")
+        logger.info("SentenceTransformer モデルをロードしました (CPU)")
     return _model
 
 
