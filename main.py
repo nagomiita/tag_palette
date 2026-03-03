@@ -14,11 +14,6 @@ Usage:
 
 from __future__ import annotations
 
-# PyTorch の cuDNN ロードエラー回避: 他のインポートより前に設定
-import os as _os
-
-_os.environ.setdefault("TORCH_CUDNN_V8_API_DISABLED", "1")
-
 import argparse
 import json
 import logging
