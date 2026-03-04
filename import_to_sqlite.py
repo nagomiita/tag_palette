@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 from tag_palette import is_sensitive
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ class TagPaletteEntry:
     tags_ja: dict[str, str]  # {英語タグ: 日本語名}
     generated_at: str
     info_dir: Path
+    tag_embedding: bytes | None  # embedding.npy から読み込んだ生バイト
 
 
 @dataclass
@@ -192,6 +195,16 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
 
         image_id = data.get("image_id") or data.get("id", info_dir.name.replace(".info", ""))
 
+        # embedding.npy を読み込み
+        tag_embedding: bytes | None = None
+        emb_path = info_dir / "embedding.npy"
+        if emb_path.exists():
+            try:
+                arr = np.load(emb_path)
+                tag_embedding = arr.astype(np.float32).tobytes()
+            except Exception as e:
+                logger.warning("embedding.npy 読み込み失敗: %s -> %s", emb_path, e)
+
         entries.append(
             TagPaletteEntry(
                 image_id=image_id,
@@ -205,6 +218,7 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
                 tags_ja=data.get("tags_ja", {}),
                 generated_at=data.get("generated_at", ""),
                 info_dir=info_dir,
+                tag_embedding=tag_embedding,
             )
         )
 
@@ -412,6 +426,12 @@ def _do_import(
 
         if file_path in media_path_to_id:
             media_id = media_path_to_id[file_path]
+            # 既存レコードの tag_embedding が NULL なら更新
+            if entry.tag_embedding:
+                conn.execute(
+                    "UPDATE media SET tag_embedding = ? WHERE id = ? AND tag_embedding IS NULL",
+                    (entry.tag_embedding, media_id),
+                )
         else:
             media_id = entry.image_id
             genre_id = entry.genre if entry.genre and entry.genre in genre_csv else None
@@ -419,11 +439,12 @@ def _do_import(
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
-                                   is_favorite, is_sensitive, view_count, media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)
+                                   tag_embedding, is_favorite, is_sensitive, view_count,
+                                   media_type, genre_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)
                 """,
                 (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 int(entry.is_sensitive), media_type, genre_id, now),
+                 entry.tag_embedding, int(entry.is_sensitive), media_type, genre_id, now),
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1
