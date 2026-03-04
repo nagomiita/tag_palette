@@ -525,18 +525,20 @@ def _do_import(
 
 
 def main() -> None:
+    from env_config import get_db_path, get_image_dir
+
     parser = argparse.ArgumentParser(description="tag_palette.json → SQLite インポート")
     parser.add_argument(
         "--image-dir",
         type=Path,
-        required=True,
-        help="Eagle ライブラリの images ディレクトリ",
+        default=get_image_dir(),
+        help="Eagle ライブラリの images ディレクトリ (env: EAGLE_IMAGE_DIR)",
     )
     parser.add_argument(
         "--db",
         type=Path,
-        required=True,
-        help="SQLite データベースファイルパス",
+        default=get_db_path(),
+        help="SQLite データベースファイルパス (env: SQLITE_DB_PATH)",
     )
     parser.add_argument(
         "--dry-run",
@@ -551,6 +553,10 @@ def main() -> None:
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
+    if not args.image_dir:
+        parser.error("--image-dir または環境変数 EAGLE_IMAGE_DIR を指定してください")
+    if not args.db:
+        parser.error("--db または環境変数 SQLITE_DB_PATH を指定してください")
     if not args.image_dir.is_dir():
         logger.error("ディレクトリが見つかりません: %s", args.image_dir)
         sys.exit(1)

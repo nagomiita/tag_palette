@@ -322,11 +322,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Eagle ライブラリの画像にタグを生成 (タスクスケジューラ用)"
     )
+    from env_config import get_image_dir
+
     parser.add_argument(
         "--image-dir",
         type=Path,
-        required=True,
-        help="Eagle ライブラリの images ディレクトリ",
+        default=get_image_dir(),
+        help="Eagle ライブラリの images ディレクトリ (env: EAGLE_IMAGE_DIR)",
     )
     parser.add_argument("--log-file", type=Path, default=None, help="ログファイルパス")
     parser.add_argument(
@@ -341,6 +343,8 @@ def main() -> None:
 
     setup_logging(args.log_file)
 
+    if not args.image_dir:
+        parser.error("--image-dir または環境変数 EAGLE_IMAGE_DIR を指定してください")
     if not args.image_dir.is_dir():
         logger.error("ディレクトリが見つかりません: %s", args.image_dir)
         sys.exit(1)

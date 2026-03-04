@@ -100,14 +100,16 @@ def move_orphans(
 
 
 def main() -> None:
+    from env_config import get_image_dir
+
     parser = argparse.ArgumentParser(
         description="オリジナルファイルが存在しない .info ディレクトリを退避"
     )
     parser.add_argument(
         "--image-dir",
         type=Path,
-        required=True,
-        help="Eagle ライブラリの images ディレクトリ",
+        default=get_image_dir(),
+        help="Eagle ライブラリの images ディレクトリ (env: EAGLE_IMAGE_DIR)",
     )
     parser.add_argument(
         "--dest",
@@ -128,6 +130,8 @@ def main() -> None:
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
+    if not args.image_dir:
+        parser.error("--image-dir または環境変数 EAGLE_IMAGE_DIR を指定してください")
     if not args.image_dir.is_dir():
         logger.error("ディレクトリが見つかりません: %s", args.image_dir)
         sys.exit(1)

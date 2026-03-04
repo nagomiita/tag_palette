@@ -5,6 +5,7 @@ description = "WD14 Tagger を使った画像タグ生成ライブラリ (翻訳
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "dghs-imgutils>=0.19.0",
     "googletrans>=4.0.2",
     "huggingface-hub>=0.28.1",
     "numpy>=1.26.4",
@@ -12,6 +13,7 @@ dependencies = [
     "opencv-python-headless>=4.11.0",
     "pandas>=2.3.0",
     "pillow>=11.2.1",
+    "python-dotenv>=1.2.2",
     "sentence-transformers>=3.0.0",
     "torch>=2.6.0",
 ]
@@ -41,3 +43,7 @@ explicit = true
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
+
+# bchlib は C コンパイラ必須 (CCIP には不要) なので除外
+[tool.uv]
+override-dependencies = ["bchlib ; sys_platform == 'never'"]
