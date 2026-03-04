@@ -36,6 +36,13 @@ DANBOORU_CATEGORY_MAP: dict[str, str] = {
     "4": "character",
 }
 
+VIDEO_EXTENSIONS = {"mp4", "webm", "avi", "mov", "mkv", "flv", "wmv", "mpg", "mpeg"}
+
+
+def _media_type(ext: str) -> str:
+    """拡張子から media_type を判定する。"""
+    return "VIDEO" if ext.lower().strip(".") in VIDEO_EXTENSIONS else "IMAGE"
+
 # ---------------------------------------------------------------------------
 # データ構造
 # ---------------------------------------------------------------------------
@@ -408,14 +415,15 @@ def _do_import(
         else:
             media_id = entry.image_id
             genre_id = entry.genre if entry.genre and entry.genre in genre_csv else None
+            media_type = _media_type(entry.ext)
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
                                    is_favorite, is_sensitive, view_count, media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, 0, 'IMAGE', ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)
                 """,
                 (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 int(entry.is_sensitive), genre_id, now),
+                 int(entry.is_sensitive), media_type, genre_id, now),
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1
