@@ -22,3 +22,8 @@ def get_image_dir() -> Path | None:
 def get_db_path() -> Path | None:
     val = os.environ.get("SQLITE_DB_PATH")
     return Path(val) if val else None
+
+
+def get_api_url() -> str:
+    """Eagle API の URL を返す (env: EAGLE_API_URL)。"""
+    return os.environ.get("EAGLE_API_URL", "http://localhost:8000")
