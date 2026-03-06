@@ -71,7 +71,7 @@ def get_genre_ja(genre_key: str) -> str:
     return genre_key
 
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 THUMBNAIL_SIZE = (300, 300)
 STATE_FILE = Path("last_run.txt")
 SAVE_INTERVAL = 100
@@ -292,6 +292,19 @@ def write_tags_to_eagle(
             np.save(npy_path, embedding_arr)
     except Exception as e:
         logger.error("埋め込み生成失敗: %s -> %s", eagle_image.eagle_id, e)
+
+    # CCIP キャラクター特徴ベクトル生成 → .npy 保存
+    if is_image_file(eagle_image):
+        ccip_path = eagle_image.info_dir / "ccip_embedding.npy"
+        if not ccip_path.exists():
+            try:
+                from imgutils.metrics import ccip_extract_feature
+
+                target = eagle_image.thumbnail_path if eagle_image.thumbnail_path.exists() else eagle_image.image_path
+                feat = ccip_extract_feature(str(target))
+                np.save(ccip_path, feat.astype(np.float32))
+            except Exception as e:
+                logger.warning("CCIP 抽出失敗: %s -> %s", eagle_image.eagle_id, e)
 
     # tag_palette.json にタグ生データ保存
     try:

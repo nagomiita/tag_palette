@@ -38,7 +38,7 @@ DANBOORU_CATEGORY_MAP: dict[str, str] = {
     "4": "character",
 }
 
-VIDEO_EXTENSIONS = {"mp4", "webm", "avi", "mov", "mkv", "flv", "wmv", "mpg", "mpeg"}
+VIDEO_EXTENSIONS = {"mp4", "webm", "avi", "mov", "mkv", "flv", "wmv", "mpg", "mpeg", "gif"}
 
 
 def _media_type(ext: str) -> str:
@@ -66,6 +66,7 @@ class TagPaletteEntry:
     generated_at: str
     info_dir: Path
     tag_embedding: bytes | None  # embedding.npy から読み込んだ生バイト
+    ccip_embedding: bytes | None  # ccip_embedding.npy から読み込んだ生バイト
 
 
 @dataclass
@@ -205,6 +206,16 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
             except Exception as e:
                 logger.warning("embedding.npy 読み込み失敗: %s -> %s", emb_path, e)
 
+        # ccip_embedding.npy を読み込み
+        ccip_embedding: bytes | None = None
+        ccip_path = info_dir / "ccip_embedding.npy"
+        if ccip_path.exists():
+            try:
+                arr = np.load(ccip_path)
+                ccip_embedding = arr.astype(np.float32).tobytes()
+            except Exception as e:
+                logger.warning("ccip_embedding.npy 読み込み失敗: %s -> %s", ccip_path, e)
+
         entries.append(
             TagPaletteEntry(
                 image_id=image_id,
@@ -219,6 +230,7 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
                 generated_at=data.get("generated_at", ""),
                 info_dir=info_dir,
                 tag_embedding=tag_embedding,
+                ccip_embedding=ccip_embedding,
             )
         )
 
@@ -426,11 +438,16 @@ def _do_import(
 
         if file_path in media_path_to_id:
             media_id = media_path_to_id[file_path]
-            # 既存レコードの tag_embedding が NULL なら更新
+            # 既存レコードの embedding が NULL なら更新
             if entry.tag_embedding:
                 conn.execute(
                     "UPDATE media SET tag_embedding = ? WHERE id = ? AND tag_embedding IS NULL",
                     (entry.tag_embedding, media_id),
+                )
+            if entry.ccip_embedding:
+                conn.execute(
+                    "UPDATE media SET ccip_embedding = ? WHERE id = ? AND ccip_embedding IS NULL",
+                    (entry.ccip_embedding, media_id),
                 )
         else:
             media_id = entry.image_id
@@ -439,12 +456,12 @@ def _do_import(
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
-                                   tag_embedding, is_favorite, is_sensitive, view_count,
+                                   tag_embedding, ccip_embedding, is_favorite, is_sensitive, view_count,
                                    media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)
                 """,
                 (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 entry.tag_embedding, int(entry.is_sensitive), media_type, genre_id, now),
+                 entry.tag_embedding, entry.ccip_embedding, int(entry.is_sensitive), media_type, genre_id, now),
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1

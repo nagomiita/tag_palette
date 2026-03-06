@@ -21,7 +21,7 @@ from tag_palette import (
 )
 
 SAMPLES_DIR = Path(__file__).parent
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
 def find_images() -> list[Path]:

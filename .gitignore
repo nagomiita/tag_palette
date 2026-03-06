@@ -13,6 +13,9 @@ wheels/
 .idea/
 .vscode/
 
+# Environment
+.env
+
 # OS
 .DS_Store
 
@@ -26,3 +29,5 @@ samples/*.jpeg
 samples/*.webp
 samples/*.bmp
 samples/*.gif
+
+app
