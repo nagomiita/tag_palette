@@ -48,7 +48,6 @@ VIDEO_EXTENSIONS = {
     "wmv",
     "mpg",
     "mpeg",
-    "gif",
 }
 COMIC_TAGS = {"comic", "greyscale", "monochrome", "speech_bubble"}
 
