@@ -512,9 +512,9 @@ def _do_import(
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
-                                   is_favorite, is_sensitive, ai_score,
+                                   is_sensitive, ai_score,
                                    view_count, media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
                 """,
                 (
                     media_id,
