@@ -38,7 +38,18 @@ DANBOORU_CATEGORY_MAP: dict[str, str] = {
     "4": "character",
 }
 
-VIDEO_EXTENSIONS = {"mp4", "webm", "avi", "mov", "mkv", "flv", "wmv", "mpg", "mpeg", "gif"}
+VIDEO_EXTENSIONS = {
+    "mp4",
+    "webm",
+    "avi",
+    "mov",
+    "mkv",
+    "flv",
+    "wmv",
+    "mpg",
+    "mpeg",
+    "gif",
+}
 COMIC_TAGS = {"comic", "greyscale", "monochrome", "speech_bubble"}
 
 
@@ -49,6 +60,7 @@ def _media_type(ext: str, tags: dict[str, float] | None = None) -> str:
     if tags and COMIC_TAGS & tags.keys():
         return "MANGA"
     return "IMAGE"
+
 
 # ---------------------------------------------------------------------------
 # データ構造
@@ -175,14 +187,42 @@ def load_translation_cache(path: Path | None = None) -> dict[str, str]:
     return result
 
 
-
 # ---------------------------------------------------------------------------
 # tag_palette.json 読み込み
 # ---------------------------------------------------------------------------
 
 
-def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
-    """images ディレクトリから全 tag_palette.json を読み込む。"""
+LAST_IMPORT_FILE = "last_import.txt"
+
+
+def _last_import_path(image_dir: Path) -> Path:
+    return image_dir.parent / LAST_IMPORT_FILE
+
+
+def load_last_import(image_dir: Path) -> datetime | None:
+    path = _last_import_path(image_dir)
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+        return datetime.fromisoformat(text)
+    except (ValueError, OSError):
+        return None
+
+
+def save_last_import(image_dir: Path, run_time: datetime) -> None:
+    path = _last_import_path(image_dir)
+    path.write_text(run_time.isoformat(), encoding="utf-8")
+
+
+def load_tag_palettes(
+    image_dir: Path, *, since: datetime | None = None
+) -> list[TagPaletteEntry]:
+    """images ディレクトリから tag_palette.json を読み込む。
+
+    since が指定された場合、tag_palette.json の更新日時が since 以降のもののみ対象。
+    """
+    cutoff = since.timestamp() if since else 0
     entries: list[TagPaletteEntry] = []
 
     for info_dir in sorted(image_dir.iterdir()):
@@ -193,6 +233,9 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
         if not tp_path.exists():
             continue
 
+        if cutoff and tp_path.stat().st_mtime < cutoff:
+            continue
+
         try:
             with open(tp_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -200,7 +243,9 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
             logger.warning("読み込み失敗: %s -> %s", tp_path, e)
             continue
 
-        image_id = data.get("image_id") or data.get("id", info_dir.name.replace(".info", ""))
+        image_id = data.get("image_id") or data.get(
+            "id", info_dir.name.replace(".info", "")
+        )
 
         # embedding.npy を読み込み
         tag_embedding: bytes | None = None
@@ -220,7 +265,9 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
                 arr = np.load(ccip_path)
                 ccip_embedding = arr.astype(np.float32).tobytes()
             except Exception as e:
-                logger.warning("ccip_embedding.npy 読み込み失敗: %s -> %s", ccip_path, e)
+                logger.warning(
+                    "ccip_embedding.npy 読み込み失敗: %s -> %s", ccip_path, e
+                )
 
         entries.append(
             TagPaletteEntry(
@@ -243,7 +290,6 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
 
     logger.info("tag_palette.json: %d 件", len(entries))
     return entries
-
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +477,9 @@ def _do_import(
             )
             tc_updated += 1
     if tc_inserted or tc_updated:
-        logger.info("translation_cache: 追加 %d 件, 日本語名更新 %d 件", tc_inserted, tc_updated)
+        logger.info(
+            "translation_cache: 追加 %d 件, 日本語名更新 %d 件", tc_inserted, tc_updated
+        )
 
     # ── 2. 既存 media (file_path → id) キャッシュ ─────────────
     media_path_to_id: dict[str, str] = {}
@@ -472,9 +520,20 @@ def _do_import(
                                    view_count, media_type, genre_id, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?)
                 """,
-                (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 entry.tag_embedding, entry.ccip_embedding, int(entry.is_sensitive), entry.ai_score,
-                 media_type, genre_id, now),
+                (
+                    media_id,
+                    file_path,
+                    entry.image_name,
+                    entry.ext,
+                    thumbnail_path,
+                    entry.tag_embedding,
+                    entry.ccip_embedding,
+                    int(entry.is_sensitive),
+                    entry.ai_score,
+                    media_type,
+                    genre_id,
+                    now,
+                ),
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1
@@ -575,6 +634,11 @@ def main() -> None:
         action="store_true",
         help="読み込みのみ (書き込みしない)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="全件再インポート (前回実行時刻を無視)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -595,6 +659,20 @@ def main() -> None:
         logger.error("DB ファイルが見つかりません: %s", args.db)
         sys.exit(1)
 
+    # 今回の実行時刻を記録 (探索前に取得)
+    run_time = datetime.now(timezone.utc)
+
+    # 前回実行時刻
+    if args.force:
+        since = None
+        logger.info("--force: 全件を対象にします")
+    else:
+        since = load_last_import(args.image_dir)
+        if since:
+            logger.info("前回インポート: %s", since.isoformat())
+        else:
+            logger.info("初回インポート: 全件を対象にします")
+
     # CSV マスタ読み込み
     category_csv = load_categories()
     danbooru = load_danbooru_tags()
@@ -602,9 +680,10 @@ def main() -> None:
     trans_cache = load_translation_cache()
 
     # tag_palette.json 読み込み
-    entries = load_tag_palettes(args.image_dir)
+    entries = load_tag_palettes(args.image_dir, since=since)
     if not entries:
         logger.info("対象の tag_palette.json がありません。")
+        save_last_import(args.image_dir, run_time)
         return
 
     if args.dry_run:
@@ -612,10 +691,17 @@ def main() -> None:
         for e in entries[:3]:
             sample_tag = next(iter(e.tags))
             sample_ja = e.tags_ja.get(sample_tag, sample_tag)
-            logger.info("  %s: %d tags, sample: %s → %s", e.image_name, len(e.tags), sample_tag, sample_ja)
+            logger.info(
+                "  %s: %d tags, sample: %s → %s",
+                e.image_name,
+                len(e.tags),
+                sample_tag,
+                sample_ja,
+            )
         return
 
     import_to_sqlite(args.db, entries, danbooru, genre_csv, category_csv, trans_cache)
+    save_last_import(args.image_dir, run_time)
 
 
 if __name__ == "__main__":
