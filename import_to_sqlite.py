@@ -500,17 +500,6 @@ def _do_import(
 
         if file_path in media_path_to_id:
             media_id = media_path_to_id[file_path]
-            # 既存レコードの embedding が NULL なら更新
-            if entry.tag_embedding:
-                conn.execute(
-                    "UPDATE media SET tag_embedding = ? WHERE id = ? AND tag_embedding IS NULL",
-                    (entry.tag_embedding, media_id),
-                )
-            if entry.ccip_embedding:
-                conn.execute(
-                    "UPDATE media SET ccip_embedding = ? WHERE id = ? AND ccip_embedding IS NULL",
-                    (entry.ccip_embedding, media_id),
-                )
             if entry.ai_score is not None:
                 conn.execute(
                     "UPDATE media SET ai_score = ? WHERE id = ? AND ai_score IS NULL",
@@ -523,9 +512,9 @@ def _do_import(
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
-                                   tag_embedding, ccip_embedding, is_favorite, is_sensitive, ai_score,
+                                   is_favorite, is_sensitive, ai_score,
                                    view_count, media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?)
                 """,
                 (
                     media_id,
@@ -533,8 +522,6 @@ def _do_import(
                     entry.image_name,
                     entry.ext,
                     thumbnail_path,
-                    entry.tag_embedding,
-                    entry.ccip_embedding,
                     int(entry.is_sensitive),
                     entry.ai_score,
                     media_type,
@@ -544,6 +531,33 @@ def _do_import(
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1
+
+        # ── media_embeddings ──────────────────────────────────
+        if entry.tag_embedding or entry.ccip_embedding:
+            existing_emb = conn.execute(
+                "SELECT id, tag_embedding, ccip_embedding FROM media_embeddings WHERE media_id = ?",
+                (media_id,),
+            ).fetchone()
+            if existing_emb:
+                emb_id, existing_tag, existing_ccip = existing_emb
+                if entry.tag_embedding and existing_tag is None:
+                    conn.execute(
+                        "UPDATE media_embeddings SET tag_embedding = ? WHERE id = ?",
+                        (entry.tag_embedding, emb_id),
+                    )
+                if entry.ccip_embedding and existing_ccip is None:
+                    conn.execute(
+                        "UPDATE media_embeddings SET ccip_embedding = ? WHERE id = ?",
+                        (entry.ccip_embedding, emb_id),
+                    )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO media_embeddings (id, media_id, tag_embedding, ccip_embedding, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (_new_uuid(), media_id, entry.tag_embedding, entry.ccip_embedding, now),
+                )
 
         # ── 既存 media_tags 削除 (同モデル再インポート) ────────
         conn.execute(
