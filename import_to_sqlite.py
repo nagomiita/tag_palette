@@ -66,6 +66,7 @@ class TagPaletteEntry:
     model_name: str
     genre: str | None
     is_sensitive: bool
+    ai_score: float | None
     tags: dict[str, float]  # {英語タグ: confidence}
     tags_ja: dict[str, str]  # {英語タグ: 日本語名}
     generated_at: str
@@ -230,6 +231,7 @@ def load_tag_palettes(image_dir: Path) -> list[TagPaletteEntry]:
                 model_name=data.get("model_name", ""),
                 genre=data.get("genre"),
                 is_sensitive=bool(data.get("is_sensitive", False)),
+                ai_score=data.get("ai_score"),
                 tags=data.get("tags", {}),
                 tags_ja=data.get("tags_ja", {}),
                 generated_at=data.get("generated_at", ""),
@@ -454,6 +456,11 @@ def _do_import(
                     "UPDATE media SET ccip_embedding = ? WHERE id = ? AND ccip_embedding IS NULL",
                     (entry.ccip_embedding, media_id),
                 )
+            if entry.ai_score is not None:
+                conn.execute(
+                    "UPDATE media SET ai_score = ? WHERE id = ? AND ai_score IS NULL",
+                    (entry.ai_score, media_id),
+                )
         else:
             media_id = entry.image_id
             genre_id = entry.genre if entry.genre and entry.genre in genre_csv else None
@@ -461,12 +468,13 @@ def _do_import(
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
-                                   tag_embedding, ccip_embedding, is_favorite, is_sensitive, view_count,
-                                   media_type, genre_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?)
+                                   tag_embedding, ccip_embedding, is_favorite, is_sensitive, ai_score,
+                                   view_count, media_type, genre_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?)
                 """,
                 (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 entry.tag_embedding, entry.ccip_embedding, int(entry.is_sensitive), media_type, genre_id, now),
+                 entry.tag_embedding, entry.ccip_embedding, int(entry.is_sensitive), entry.ai_score,
+                 media_type, genre_id, now),
             )
             media_path_to_id[file_path] = media_id
             stats["media_created"] += 1

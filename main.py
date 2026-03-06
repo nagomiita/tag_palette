@@ -344,6 +344,17 @@ def write_tags_to_eagle(
             except Exception as e:
                 logger.warning("CCIP 抽出失敗: %s -> %s", eagle_image.eagle_id, e)
 
+    # AI 生成スコア判定
+    ai_score: float | None = None
+    if is_image_file(eagle_image):
+        try:
+            from imgutils.validate import get_ai_created_score
+
+            target = eagle_image.thumbnail_path if eagle_image.thumbnail_path.exists() else eagle_image.image_path
+            ai_score = get_ai_created_score(str(target))
+        except Exception as e:
+            logger.warning("AI 判定失敗: %s -> %s", eagle_image.eagle_id, e)
+
     # tag_palette.json にタグ生データ保存
     try:
         tp_path = eagle_image.info_dir / "tag_palette.json"
@@ -355,6 +366,7 @@ def write_tags_to_eagle(
             "ext": eagle_image.ext,
             "genre": genre,
             "is_sensitive": sensitive,
+            "ai_score": ai_score,
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),
