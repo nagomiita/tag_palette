@@ -225,15 +225,22 @@ def load_tag_palettes(
     cutoff = since.timestamp() if since else 0
     entries: list[TagPaletteEntry] = []
 
+    scanned = 0
+    skipped = 0
     for info_dir in sorted(image_dir.iterdir()):
         if not info_dir.is_dir() or not info_dir.name.endswith(".info"):
             continue
+
+        scanned += 1
+        if scanned % 5000 == 0:
+            logger.info("スキャン中... %d ディレクトリ (読み込み: %d, スキップ: %d)", scanned, len(entries), skipped)
 
         tp_path = info_dir / "tag_palette.json"
         if not tp_path.exists():
             continue
 
         if cutoff and tp_path.stat().st_mtime < cutoff:
+            skipped += 1
             continue
 
         try:
@@ -288,7 +295,7 @@ def load_tag_palettes(
             )
         )
 
-    logger.info("tag_palette.json: %d 件", len(entries))
+    logger.info("スキャン完了: %d ディレクトリ (読み込み: %d, スキップ: %d)", scanned, len(entries), skipped)
     return entries
 
 
