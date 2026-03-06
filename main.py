@@ -204,6 +204,44 @@ def find_eagle_images(
     return images
 
 
+# ── HEIC → WebP 変換 ─────────────────────────────────────
+
+
+def convert_heic_to_webp(eagle_image: EagleImage, quality: int = 90) -> None:
+    """HEIC 画像を WebP に変換し、metadata.json を更新、元ファイルを削除する。"""
+    if eagle_image.ext.lower() != "heic":
+        return
+
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+
+    webp_path = eagle_image.info_dir / f"{eagle_image.name}.webp"
+    try:
+        with Image.open(eagle_image.image_path) as img:
+            img.save(webp_path, "WEBP", quality=quality)
+
+        # metadata.json の ext を更新
+        with open(eagle_image.metadata_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        meta["ext"] = "webp"
+        with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+
+        # 元ファイル削除
+        eagle_image.image_path.unlink()
+
+        # EagleImage を更新
+        eagle_image.ext = "webp"
+        eagle_image.image_path = webp_path
+
+        logger.info("HEIC → WebP 変換: %s", webp_path.name)
+    except Exception as e:
+        logger.error("HEIC 変換失敗: %s -> %s", eagle_image.eagle_id, e)
+        # 中途半端な webp が残っていたら削除
+        if webp_path.exists() and eagle_image.image_path.exists():
+            webp_path.unlink()
+
+
 # ── サムネイル生成 ──────────────────────────────────────
 
 
@@ -397,6 +435,7 @@ def main() -> None:
 
     for i, eagle_image in enumerate(images, 1):
         logger.info("(%d/%d) %s", i, len(images), eagle_image.image_path.name)
+        convert_heic_to_webp(eagle_image)
         ensure_thumbnail(eagle_image)
 
         # サムネイルが無ければスキップ

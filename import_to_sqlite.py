@@ -39,11 +39,16 @@ DANBOORU_CATEGORY_MAP: dict[str, str] = {
 }
 
 VIDEO_EXTENSIONS = {"mp4", "webm", "avi", "mov", "mkv", "flv", "wmv", "mpg", "mpeg", "gif"}
+COMIC_TAGS = {"comic", "greyscale", "monochrome", "speech_bubble"}
 
 
-def _media_type(ext: str) -> str:
-    """拡張子から media_type を判定する。"""
-    return "VIDEO" if ext.lower().strip(".") in VIDEO_EXTENSIONS else "IMAGE"
+def _media_type(ext: str, tags: dict[str, float] | None = None) -> str:
+    """拡張子とタグから media_type を判定する。"""
+    if ext.lower().strip(".") in VIDEO_EXTENSIONS:
+        return "VIDEO"
+    if tags and COMIC_TAGS & tags.keys():
+        return "MANGA"
+    return "IMAGE"
 
 # ---------------------------------------------------------------------------
 # データ構造
@@ -452,7 +457,7 @@ def _do_import(
         else:
             media_id = entry.image_id
             genre_id = entry.genre if entry.genre and entry.genre in genre_csv else None
-            media_type = _media_type(entry.ext)
+            media_type = _media_type(entry.ext, entry.tags)
             conn.execute(
                 """
                 INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path,
