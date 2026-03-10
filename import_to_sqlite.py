@@ -97,6 +97,16 @@ class GenreEntry:
     ja: str
 
 
+@dataclass
+class CategoryRule:
+    """tag_category_rules.csv 1行分。"""
+
+    match_type: str  # "prefix", "suffix", "contains"
+    pattern: str
+    category: str  # category.csv の id
+    priority: int
+
+
 # ---------------------------------------------------------------------------
 # CSV 読み込み
 # ---------------------------------------------------------------------------
@@ -147,6 +157,37 @@ def load_genres(path: Path | None = None) -> dict[str, GenreEntry]:
             )
     logger.info("genre.csv: %d 件", len(result))
     return result
+
+
+def load_category_rules(path: Path | None = None) -> list[CategoryRule]:
+    """tag_category_rules.csv → [CategoryRule] (priority 降順)"""
+    path = path or DATA_DIR / "tag_category_rules.csv"
+    rules: list[CategoryRule] = []
+    with open(path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            rules.append(
+                CategoryRule(
+                    match_type=row["match_type"],
+                    pattern=row["pattern"],
+                    category=row["category"],
+                    priority=int(row.get("priority", 0)),
+                )
+            )
+    rules.sort(key=lambda r: r.priority, reverse=True)
+    logger.info("tag_category_rules.csv: %d 件", len(rules))
+    return rules
+
+
+def match_category_rule(tag: str, rules: list[CategoryRule]) -> str | None:
+    """タグ名にマッチする最高優先度のルールのカテゴリを返す。マッチなしなら None。"""
+    for rule in rules:
+        if rule.match_type == "contains" and rule.pattern in tag:
+            return rule.category
+        if rule.match_type == "prefix" and tag.startswith(rule.pattern):
+            return rule.category
+        if rule.match_type == "suffix" and tag.endswith(rule.pattern):
+            return rule.category
+    return None
 
 
 def load_translation_cache(path: Path | None = None) -> dict[str, str]:
@@ -334,6 +375,7 @@ def sync_master_data(
     categories: dict[str, CategoryEntry],
     trans_cache: dict[str, str],
     entry_tags: set[str],
+    category_rules: list[CategoryRule] | None = None,
 ) -> None:
     """カテゴリ・ジャンル・タグ・タグジャンルを merge API で同期する。"""
 
@@ -364,8 +406,15 @@ def sync_master_data(
     seen_tag_ids: set[str] = set()
 
     # 3a. danbooru_tags
+    rule_overrides = 0
     for tag_en, db_tag in danbooru.items():
         category_id = cat_code_to_id.get(db_tag.category)
+        # general(0) のタグはルールでカテゴリを上書き
+        if db_tag.category == "0" and category_rules:
+            matched = match_category_rule(tag_en, category_rules)
+            if matched and matched in categories:
+                category_id = matched
+                rule_overrides += 1
         tag_ja = db_tag.ja or tag_en
         sensitive = is_sensitive(tag_en)
         tag_data.append({
@@ -404,6 +453,9 @@ def sync_master_data(
                 "isSensitive": is_sensitive(tag_en),
             })
             seen_tag_ids.add(tag_en)
+
+    if rule_overrides:
+        logger.info("カテゴリルール上書き: %d 件", rule_overrides)
 
     # バッチ送信
     for i, batch in enumerate(_chunked(tag_data, BATCH_SIZE_TAGS)):
@@ -539,6 +591,7 @@ def main() -> None:
     danbooru = load_danbooru_tags()
     genre_csv = load_genres()
     trans_cache = load_translation_cache()
+    category_rules = load_category_rules()
 
     # tag_palette.json 読み込み
     entries = load_tag_palettes(args.image_dir, since=since)
@@ -573,7 +626,7 @@ def main() -> None:
         logger.info("Eagle API: %s", args.api_url)
 
         # 1. マスタデータ同期
-        sync_master_data(api, danbooru, genre_csv, category_csv, trans_cache, all_entry_tags)
+        sync_master_data(api, danbooru, genre_csv, category_csv, trans_cache, all_entry_tags, category_rules)
 
         # 2. エントリインポート
         import_entries_via_api(api, entries)
