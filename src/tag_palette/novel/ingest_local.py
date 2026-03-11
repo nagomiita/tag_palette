@@ -1,4 +1,4 @@
-"""Ingest novel text files into the production local.db (UUID-based schema).
+"""Ingest novel files (.txt / .pdf) into the production local.db (UUID-based schema).
 
 Usage:
     python src/tag_palette/novel/ingest_local.py [input_dir] [--db <path>] [--dry-run]
@@ -6,13 +6,9 @@ Usage:
 Reads NOVELS_DIR and SQLITE_DB_PATH from .env (dotenv).
 CLI arguments override .env values.
 
-File name format: {pixiv_id}_{title}.txt
-File structure:
-    Line 1: URL
-    Line 3: Author
-    Line 5: Title
-    Line 7: Tags: tag1, tag2, ...
-    Line 9+: Body
+Supported formats:
+    .txt  — Pixiv novel text ({pixiv_id}_{title}.txt)
+    .pdf  — なろう PDF novel ({n_code}.pdf)
 """
 
 from __future__ import annotations
@@ -26,8 +22,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .chunker import chunk_text
-from .morpheme import extract_morphemes
+try:
+    from .chunker import chunk_text
+    from .morpheme import extract_morphemes
+    from .pdf_parser import parse_pdf
+except ImportError:
+    from chunker import chunk_text
+    from morpheme import extract_morphemes
+    from pdf_parser import parse_pdf
 
 # Load .env from project root
 _ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
@@ -48,7 +50,14 @@ def _new_id() -> str:
 
 
 def _parse_novel_file(file_path: Path) -> dict:
-    """Parse a novel text file and return metadata + body."""
+    """Parse a novel file (.txt or .pdf) and return metadata + body."""
+    if file_path.suffix.lower() == ".pdf":
+        return _parse_pdf_file(file_path)
+    return _parse_txt_file(file_path)
+
+
+def _parse_txt_file(file_path: Path) -> dict:
+    """Parse a Pixiv novel text file."""
     stem = file_path.stem
     novel_id = stem.split("_", 1)[0]  # Pixiv ID as string
     title = stem.split("_", 1)[1] if "_" in stem else stem
@@ -73,6 +82,19 @@ def _parse_novel_file(file_path: Path) -> dict:
         "url": url,
         "tags": tags,
         "body": body,
+    }
+
+
+def _parse_pdf_file(file_path: Path) -> dict:
+    """Parse a なろう PDF novel file."""
+    novel = parse_pdf(file_path)
+    return {
+        "novel_id": novel.n_code,
+        "title": novel.title,
+        "author": novel.author,
+        "url": "",
+        "tags": novel.tags,
+        "body": novel.body,
     }
 
 
@@ -200,18 +222,20 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) ->
 
 
 def ingest_directory(db_path: Path, input_dir: Path, *, dry_run: bool = False) -> list[dict]:
-    """Process all .txt files in a directory into the production DB."""
-    files = sorted(input_dir.glob("*.txt"))
+    """Process all .txt and .pdf files in a directory into the production DB."""
+    files = sorted(
+        [f for f in input_dir.iterdir() if f.suffix.lower() in (".txt", ".pdf")]
+    )
     print(f"Input: {input_dir}")
     print(f"DB:    {db_path}")
-    print(f"Files: {len(files)}")
+    print(f"Files: {len(files)} (.txt: {sum(1 for f in files if f.suffix == '.txt')}, .pdf: {sum(1 for f in files if f.suffix.lower() == '.pdf')})")
 
     if dry_run:
         for f in files:
             stem = f.stem
             novel_id = stem.split("_", 1)[0]
             title = stem.split("_", 1)[1] if "_" in stem else stem
-            print(f"  [{novel_id}] {title}")
+            print(f"  [{novel_id}] {title} ({f.suffix})")
         print(f"\n--dry-run: {len(files)} files found, no data written.")
         return []
 
