@@ -38,8 +38,6 @@
 | **chunk_embeddings** | チャンクの embedding ベクトル | novel_chunks → 1:1 | 2 |
 | **routes** | 分岐ルート定義 | novels → 1:N | 2 |
 | **route_chunks** | 分岐ルート内のチャンク | routes → 1:N | 2 |
-| **route_chunk_morphemes** | ルートチャンクと形態素の紐付け | route_chunks ↔ novel_morphemes (N:N) | 2 |
-| **route_chunk_embeddings** | ルートチャンクの embedding ベクトル | route_chunks → 1:1 | 2 |
 
 ### カラム定義
 
@@ -109,8 +107,6 @@ novels
 │               └── (merge_to)  ←── routes
 └── 1:N ── routes
                 └── 1:N ── route_chunks
-                              ├── N:N ── route_chunk_morphemes ── N:N ── novel_morphemes
-                              └── 1:1 ── route_chunk_embeddings
 ```
 
 ---
@@ -379,30 +375,7 @@ novels
 #### route_chunks と novel_chunks の関係
 
 - `route_chunks` は `novel_chunks` と同じ構造（kind, body）を持つが、独立したテーブル
-- ルート内のチャンクにも形態素解析・embedding を適用可能にする
-- `route_chunks` 用の形態素・embedding は既存テーブルを拡張して対応（後述）
-
-#### route_chunks の形態素・embedding 対応
-
-route_chunks にも形態素解析と embedding を適用するため、以下のテーブルを追加する。
-
-##### route_chunk_morphemes
-
-| カラム | 型 | 説明 |
-|---|---|---|
-| chunk_id | INTEGER FK | route_chunks.id |
-| morpheme_id | INTEGER FK | novel_morphemes.id（形態素マスタは共有） |
-| count | INTEGER DEFAULT 1 | チャンク内の出現回数 |
-| PK | (chunk_id, morpheme_id) | 複合主キー |
-
-##### route_chunk_embeddings
-
-| カラム | 型 | 説明 |
-|---|---|---|
-| chunk_id | INTEGER PK FK | route_chunks.id（1:1） |
-| embedding | BLOB NOT NULL | embedding ベクトル |
-| model | TEXT NOT NULL | 使用モデル名 |
-| created_at | TEXT | 生成日時 |
+- 分岐ルートは創作用途のため、形態素解析・embedding は適用しない
 
 ---
 
@@ -430,8 +403,6 @@ tests/
 2. コサイン類似度による類似チャンク検索
 3. `routes` / `route_chunks` テーブル追加
 4. ルートの作成・チャンク追加・合流設定
-5. `route_chunk_morphemes` / `route_chunk_embeddings` テーブル追加
-6. ルート内チャンクの形態素解析・embedding 対応
 
 今回やらないもの:
 

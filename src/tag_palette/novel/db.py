@@ -47,6 +47,32 @@ CREATE TABLE IF NOT EXISTS novel_chunk_morphemes (
     count       INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (chunk_id, morpheme_id)
 );
+
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+    chunk_id   INTEGER PRIMARY KEY REFERENCES novel_chunks(id),
+    embedding  BLOB NOT NULL,
+    model      TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS routes (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id           INTEGER NOT NULL REFERENCES novels(id),
+    name               TEXT NOT NULL,
+    description        TEXT,
+    fork_from_chunk_id INTEGER NOT NULL REFERENCES novel_chunks(id),
+    merge_to_chunk_id  INTEGER REFERENCES novel_chunks(id),
+    created_at         TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS route_chunks (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    route_id INTEGER NOT NULL REFERENCES routes(id),
+    seq      INTEGER NOT NULL,
+    kind     TEXT NOT NULL CHECK (kind IN ('dialogue', 'thought', 'narrative')),
+    body     TEXT NOT NULL
+);
+
 """
 
 
