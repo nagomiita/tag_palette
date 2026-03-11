@@ -137,6 +137,15 @@ for result in results:
         print()
 ```
 
+## 環境設定
+
+`.env` ファイルでパスを設定します。
+
+```env
+SQLITE_DB_PATH=C:\Users\taket\my_project\eagle\backend\local.db
+NOVELS_DIR=C:\Users\taket\Pictures\icloud.library\novels
+```
+
 ## バッチスクリプト
 
 ### main.py — Eagle ライブラリのタグ一括生成
@@ -187,6 +196,51 @@ uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images --des
 | `--dest` | No | `eagle.library/_orphans` | 退避先ディレクトリ |
 | `--dry-run` | No | `false` | 対象を表示するのみ (移動しない) |
 
+## 小説テキスト処理 (`tag_palette.novel`)
+
+Pixiv 小説テキストをチャンク分割・形態素解析し、本番 SQLite (`local.db`) に格納する。
+
+### インジェスト
+
+`NOVELS_DIR` に配置された `{pixiv_id}_{title}.txt` ファイルを処理する。
+
+```bash
+# .env の NOVELS_DIR / SQLITE_DB_PATH を使用 (dry-run)
+python src/tag_palette/novel/ingest_local.py --dry-run
+
+# 実行
+python src/tag_palette/novel/ingest_local.py
+
+# ディレクトリ・DB を明示指定
+python src/tag_palette/novel/ingest_local.py /path/to/novels --db /path/to/local.db
+```
+
+既に DB に存在する novel_id は自動スキップされる。
+
+### モジュール構成
+
+| ファイル | 役割 |
+|---------|------|
+| `ingest_local.py` | 本番 DB へのインジェスト CLI |
+| `chunker.py` | テキストをセリフ・心情・地の文にチャンク分割 |
+| `morpheme.py` | MeCab (fugashi) による形態素解析 |
+| `embedding.py` | チャンク埋め込みベクトル生成・類似検索 |
+| `route.py` | 分岐ルート CRUD |
+
+### DB テーブル (本番 ORM)
+
+| テーブル | 説明 |
+|---------|------|
+| `novels` | 小説メタデータ (id = Pixiv ID) |
+| `novel_labels` | ラベル (旧タグ) |
+| `novel_label_associations` | 小説↔ラベル関連 |
+| `novel_chunks` | チャンク (dialogue / thought / narrative) |
+| `novel_morphemes` | 形態素 (surface + pos) |
+| `novel_chunk_morphemes` | チャンク↔形態素 (出現回数) |
+| `chunk_embeddings` | チャンク埋め込みベクトル |
+| `routes` | 分岐ルート定義 |
+| `route_chunks` | ルート内チャンク |
+
 ### Windows での実行
 
 パスを Windows 形式にして同様に実行できる。動画サムネイル生成には ffmpeg のインストールが必要。
@@ -215,6 +269,9 @@ uv run python cleanup_orphans.py --image-dir "D:\eagle.library\images" --dry-run
 | `huggingface-hub` | モデルの自動ダウンロード |
 | `pandas` | CSV タグデータ処理 |
 | `googletrans` | Google 翻訳 API |
+| `python-dotenv` | .env ファイル読み込み |
+| `fugashi` + `unidic-lite` | MeCab 形態素解析 |
+| `sentence-transformers` | チャンク埋め込みベクトル生成 |
 
 ## 開発
 
