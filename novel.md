@@ -30,8 +30,8 @@
 | テーブル | 役割 | 関係 | Phase |
 |---|---|---|---|
 | **novels** | 作品 | — | 1 |
-| **tags** | タグマスタ（取得元サイトで付与されたタグ） | — | 1 |
-| **novel_tags** | 作品とタグの紐付け（中間テーブル） | novels ↔ tags (N:N) | 1 |
+| **novel_labels** | ラベルマスタ（取得元サイトで付与されたラベル） | — | 1 |
+| **novel_label_associations** | 作品とラベルの紐付け（中間テーブル） | novels ↔ novel_labels (N:N) | 1 |
 | **novel_chunks** | チャンク（会話/心の声/地の文を種別ごとに分割） | novels → 1:N | 1 |
 | **novel_morphemes** | 形態素辞書（形態素解析で抽出した候補のマスタ） | — | 1 |
 | **novel_chunk_morphemes** | チャンクと形態素の紐付け（中間テーブル） | novel_chunks ↔ novel_morphemes (N:N) | 1 |
@@ -39,67 +39,72 @@
 | **routes** | 分岐ルート定義 | novels → 1:N | 2 |
 | **route_chunks** | 分岐ルート内のチャンク | routes → 1:N | 2 |
 
+> **命名について**: eagle 側に既存の `tags` テーブル（メディア用タグマスタ）があるため、
+> 小説の取得元サイトタグは `novel_labels` / `novel_label_associations` として分離管理する。
+
 ### カラム定義
+
+> **共通カラム**: 全テーブルは eagle フレームワークの `IdTimestampMixin` により
+> `id` (VARCHAR(128) PK, UUID自動生成)、`created_at` (DATETIME)、`updated_at` (DATETIME) を持つ。
+> 以下のカラム定義では共通カラムを省略し、テーブル固有のカラムのみ記載する。
 
 #### novels
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| id | INTEGER PK | ファイル名の `_` より前の数値（外部ID） |
-| title | TEXT NOT NULL | ファイル名の `_` より後（拡張子除く） |
-| author | TEXT | テキスト3行目 |
-| url | TEXT | テキスト1行目 |
+| title | VARCHAR(512) NOT NULL | タイトル |
+| author | VARCHAR(255) | 作者名 |
+| url | VARCHAR(1024) | URL |
 | description | TEXT | 説明 |
-| created_at | TEXT | 登録日時 |
 
-#### tags
+> **id の決定**: tag_palette 側でファイル名の `_` より前の数値を id として設定する。
+> eagle 側の UUID 自動生成は使用せず、外部 ID をそのまま渡す。
 
-| カラム | 型 | 説明 |
-|---|---|---|
-| id | INTEGER PK | 自動採番 |
-| name | TEXT NOT NULL UNIQUE | タグ文字列 |
-
-#### novel_tags
+#### novel_labels
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| novel_id | INTEGER FK | novels.id |
-| tag_id | INTEGER FK | tags.id |
-| PK | (novel_id, tag_id) | 複合主キー |
+| name | VARCHAR(255) NOT NULL UNIQUE | ラベル文字列 |
+
+#### novel_label_associations
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| novel_id | VARCHAR(128) FK | novels.id |
+| label_id | VARCHAR(128) FK | novel_labels.id |
+| UNIQUE | (novel_id, label_id) | 複合ユニーク制約 (uix_novel_label) |
 
 #### novel_chunks
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| id | INTEGER PK | 自動採番 |
-| novel_id | INTEGER FK | novels.id |
-| seq | INTEGER | チャンクの順番 |
-| kind | TEXT NOT NULL | 種別（"dialogue" / "thought" / "narrative"） |
+| novel_id | VARCHAR(128) FK | novels.id |
+| seq | INTEGER NOT NULL | チャンクの順番 |
+| kind | VARCHAR(32) NOT NULL | 種別（"dialogue" / "thought" / "narrative"） |
 | body | TEXT NOT NULL | チャンク本文 |
 
 #### novel_morphemes
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| id | INTEGER PK | 自動採番 |
-| surface | TEXT NOT NULL | 表層形（原文のまま） |
-| pos | TEXT NOT NULL | 品詞（名詞・動詞・形容詞） |
-| UNIQUE | (surface, pos) | 同一表層形でも品詞違いは別レコード |
+| surface | VARCHAR(255) NOT NULL | 表層形（原文のまま） |
+| pos | VARCHAR(32) NOT NULL | 品詞（名詞・動詞・形容詞） |
+| UNIQUE | (surface, pos) | 同一表層形でも品詞違いは別レコード (uix_morpheme_surface_pos) |
 
 #### novel_chunk_morphemes
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| chunk_id | INTEGER FK | novel_chunks.id |
-| morpheme_id | INTEGER FK | novel_morphemes.id |
-| count | INTEGER DEFAULT 1 | チャンク内の出現回数 |
-| PK | (chunk_id, morpheme_id) | 複合主キー |
+| chunk_id | VARCHAR(128) FK | novel_chunks.id |
+| morpheme_id | VARCHAR(128) FK | novel_morphemes.id |
+| count | INTEGER NOT NULL DEFAULT 1 | チャンク内の出現回数 |
+| UNIQUE | (chunk_id, morpheme_id) | 複合ユニーク制約 (uix_chunk_morpheme) |
 
 ### ER図（概要）
 
 ```
 novels
-├── N:N ── novel_tags ── N:N ── tags
+├── N:N ── novel_label_associations ── N:N ── novel_labels
 ├── 1:N ── novel_chunks
 │               ├── N:N ── novel_chunk_morphemes ── N:N ── novel_morphemes
 │               ├── 1:1 ── chunk_embeddings
@@ -210,7 +215,7 @@ uv add fugashi unidic-lite
 | 4行目 | 空行 | — |
 | 5行目 | タイトル | novels.title |
 | 6行目 | 空行 | — |
-| 7行目 | `Tags: タグ1, タグ2, ...` | tags + novel_tags |
+| 7行目 | `Tags: ラベル1, ラベル2, ...` | novel_labels + novel_label_associations |
 | 8行目 | 空行 | — |
 | 9行目〜 | 本文 | novel_chunks |
 
@@ -287,10 +292,9 @@ data/
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| chunk_id | INTEGER PK FK | novel_chunks.id（1:1） |
+| chunk_id | VARCHAR(128) FK UNIQUE | novel_chunks.id（1:1） |
 | embedding | BLOB NOT NULL | embedding ベクトル（numpy float32 の bytes） |
-| model | TEXT NOT NULL | 使用モデル名（例: "text-embedding-3-small"） |
-| created_at | TEXT | 生成日時 |
+| model | VARCHAR(255) NOT NULL | 使用モデル名（例: "text-embedding-3-small"） |
 
 #### 仕様
 
@@ -327,22 +331,19 @@ data/
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| id | INTEGER PK | 自動採番 |
-| novel_id | INTEGER FK | novels.id |
-| name | TEXT NOT NULL | ルート名（例: "if: 戦闘回避ルート"） |
+| novel_id | VARCHAR(128) FK | novels.id |
+| name | VARCHAR(255) NOT NULL | ルート名（例: "if: 戦闘回避ルート"） |
 | description | TEXT | ルートの説明 |
-| fork_from_chunk_id | INTEGER FK | 分岐元の novel_chunks.id（この直後から分岐） |
-| merge_to_chunk_id | INTEGER FK NULL | 合流先の novel_chunks.id（NULL = 独立終了） |
-| created_at | TEXT | 作成日時 |
+| fork_from_chunk_id | VARCHAR(128) FK | 分岐元の novel_chunks.id（この直後から分岐） |
+| merge_to_chunk_id | VARCHAR(128) FK NULL | 合流先の novel_chunks.id（NULL = 独立終了） |
 
 #### テーブル: route_chunks
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| id | INTEGER PK | 自動採番 |
-| route_id | INTEGER FK | routes.id |
+| route_id | VARCHAR(128) FK | routes.id |
 | seq | INTEGER NOT NULL | ルート内の順番 |
-| kind | TEXT NOT NULL | 種別（"dialogue" / "thought" / "narrative"） |
+| kind | VARCHAR(32) NOT NULL | 種別（"dialogue" / "thought" / "narrative"） |
 | body | TEXT NOT NULL | チャンク本文 |
 
 #### ER図（Phase 2 追加分）
