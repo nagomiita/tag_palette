@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
 
+import sqlite3
+
 import httpx
 import numpy as np
 
@@ -368,6 +370,16 @@ class EagleApiClient:
 # ---------------------------------------------------------------------------
 
 
+def load_existing_tag_names(db_path: Path) -> dict[str, str]:
+    """DB から既存タグの {id: name} を読み込む。"""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = conn.execute("SELECT id, name FROM tags WHERE name IS NOT NULL").fetchall()
+        return {r[0]: r[1] for r in rows}
+    finally:
+        conn.close()
+
+
 def sync_master_data(
     api: EagleApiClient,
     danbooru: dict[str, DanbooruTag],
@@ -376,8 +388,13 @@ def sync_master_data(
     trans_cache: dict[str, str],
     entry_tags: set[str],
     category_rules: list[CategoryRule] | None = None,
+    existing_tag_names: dict[str, str] | None = None,
 ) -> None:
-    """カテゴリ・ジャンル・タグ・タグジャンルを merge API で同期する。"""
+    """カテゴリ・ジャンル・タグ・タグジャンルを merge API で同期する。
+
+    existing_tag_names が渡された場合、既存タグの name は DB の値を優先し
+    CSV の値で上書きしない。
+    """
 
     # ── 1. カテゴリ ──────────────────────────────────────────
     cat_data = [{"id": c.id, "name": c.name} for c in categories.values()]
@@ -405,6 +422,12 @@ def sync_master_data(
     tag_genre_data: list[dict] = []
     seen_tag_ids: set[str] = set()
 
+    existing = existing_tag_names or {}
+
+    def _resolve_name(tag_en: str, csv_name: str) -> str:
+        """既存タグは DB の name を優先、新規タグは CSV の name を使う。"""
+        return existing.get(tag_en, csv_name)
+
     # 3a. danbooru_tags
     rule_overrides = 0
     for tag_en, db_tag in danbooru.items():
@@ -415,7 +438,7 @@ def sync_master_data(
             if matched and matched in categories:
                 category_id = matched
                 rule_overrides += 1
-        tag_ja = db_tag.ja or tag_en
+        tag_ja = _resolve_name(tag_en, db_tag.ja or tag_en)
         sensitive = is_sensitive(tag_en)
         tag_data.append({
             "id": tag_en,
@@ -439,7 +462,7 @@ def sync_master_data(
             sensitive = is_sensitive(tag_en)
             tag_data.append({
                 "id": tag_en,
-                "name": tag_ja,
+                "name": _resolve_name(tag_en, tag_ja),
                 "isSensitive": sensitive,
             })
             seen_tag_ids.add(tag_en)
@@ -449,7 +472,7 @@ def sync_master_data(
         if tag_en not in seen_tag_ids:
             tag_data.append({
                 "id": tag_en,
-                "name": tag_en,
+                "name": _resolve_name(tag_en, tag_en),
                 "isSensitive": is_sensitive(tag_en),
             })
             seen_tag_ids.add(tag_en)
@@ -528,12 +551,135 @@ def import_entries_via_api(
 
 
 # ---------------------------------------------------------------------------
+# ポストインポート: desc_text + desc_embedding 生成
+# ---------------------------------------------------------------------------
+
+DESC_MODEL = "tag-based-v1"
+EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-small"
+
+# DB の category_id → compose_description が期待するカテゴリ名
+_CATEGORY_MAP: dict[str | None, str] = {
+    "character": "characters",
+    "meta": "meta",
+    "appearance": "appearance",
+    "costume": "costume",
+    "pose": "pose",
+    "emotion": "emotion",
+    "composition": "composition",
+    "background": "situation",
+    "copyright": "meta",
+    "general": "general",
+    None: "general",
+}
+
+
+def _backfill_desc_text(conn: sqlite3.Connection) -> int:
+    """desc_text が NULL のメディアにタグベース説明文を生成して埋める。"""
+    from infer_csv_descriptions import compose_description
+
+    media_ids = [
+        r[0]
+        for r in conn.execute(
+            "SELECT id FROM media WHERE desc_text IS NULL OR desc_text = ''"
+        ).fetchall()
+    ]
+    if not media_ids:
+        return 0
+
+    # タグを一括取得
+    placeholders = ",".join("?" for _ in media_ids)
+    tag_rows = conn.execute(
+        f"""
+        SELECT mt.media_id, t.name, t.category_id
+        FROM media_tags mt
+        JOIN tags t ON t.id = mt.tag_id
+        WHERE mt.media_id IN ({placeholders})
+        """,
+        media_ids,
+    ).fetchall()
+
+    tags_by_media: dict[str, dict[str, list[str]]] = {mid: {} for mid in media_ids}
+    for media_id, tag_name, category_id in tag_rows:
+        if not tag_name:
+            continue
+        cat = _CATEGORY_MAP.get(category_id, "general")
+        tags_by_media[media_id].setdefault(cat, []).append(tag_name)
+
+    updated = 0
+    for media_id in media_ids:
+        raw_tags = tags_by_media.get(media_id, {})
+        if not any(raw_tags.values()):
+            continue
+        description, _confidence = compose_description(raw_tags)
+        conn.execute(
+            "UPDATE media SET desc_text = ?, desc_model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (description, DESC_MODEL, media_id),
+        )
+        updated += 1
+
+    conn.commit()
+    return updated
+
+
+def _backfill_desc_embedding(conn: sqlite3.Connection) -> int:
+    """desc_embedding が NULL のメディアに embedding を生成して埋める。"""
+    from sentence_transformers import SentenceTransformer
+
+    rows = conn.execute(
+        """
+        SELECT m.id, m.desc_text
+        FROM media m
+        JOIN media_embeddings me ON me.media_id = m.id
+        WHERE me.desc_embedding IS NULL
+          AND m.desc_text IS NOT NULL
+          AND m.desc_text != ''
+        """
+    ).fetchall()
+
+    if not rows:
+        return 0
+
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    texts = [r[1] for r in rows]
+    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=len(texts) > 100)
+
+    for (media_id, _), emb in zip(rows, embeddings):
+        blob = emb.astype(np.float32).tobytes()
+        conn.execute(
+            "UPDATE media_embeddings SET desc_embedding = ? WHERE media_id = ?",
+            (blob, media_id),
+        )
+    conn.commit()
+    return len(rows)
+
+
+def post_import_desc(db_path: Path) -> None:
+    """インポート後に desc_text と desc_embedding を補完する。"""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    try:
+        n_desc = _backfill_desc_text(conn)
+        if n_desc:
+            logger.info("desc_text 生成: %d 件", n_desc)
+
+        n_emb = _backfill_desc_embedding(conn)
+        if n_emb:
+            logger.info("desc_embedding 生成: %d 件", n_emb)
+
+        if not n_desc and not n_emb:
+            logger.info("desc 補完: 対象なし")
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # メイン
 # ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    from env_config import get_api_url, get_image_dir
+    from env_config import get_api_url, get_db_path as _get_db_path, get_image_dir
 
     parser = argparse.ArgumentParser(description="tag_palette.json → Eagle API インポート")
     parser.add_argument(
@@ -625,13 +771,29 @@ def main() -> None:
     try:
         logger.info("Eagle API: %s", args.api_url)
 
-        # 1. マスタデータ同期
-        sync_master_data(api, danbooru, genre_csv, category_csv, trans_cache, all_entry_tags, category_rules)
+        # 1. マスタデータ同期（既存タグ名を保護）
+        existing_names: dict[str, str] = {}
+        db_path = _get_db_path()
+        if db_path and db_path.exists():
+            existing_names = load_existing_tag_names(db_path)
+            logger.info("既存タグ名読み込み: %d 件", len(existing_names))
+
+        sync_master_data(
+            api, danbooru, genre_csv, category_csv, trans_cache,
+            all_entry_tags, category_rules, existing_names,
+        )
 
         # 2. エントリインポート
         import_entries_via_api(api, entries)
     finally:
         api.close()
+
+    # 3. desc_text + desc_embedding 補完
+    db_path = _get_db_path()
+    if db_path and db_path.exists():
+        post_import_desc(db_path)
+    else:
+        logger.warning("SQLITE_DB_PATH が未設定または存在しないため desc 補完をスキップ")
 
     save_last_import(args.image_dir, run_time)
 
