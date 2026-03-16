@@ -24,10 +24,18 @@ class NovelPdf:
     tags: list[str]
     body: str
     source_path: str
+    is_sensitive: bool = False
 
+
+_SENSITIVE_PATTERN = re.compile(r"18禁|R[\-\s]?18|Ｒ[\-\s]?１８")
 
 # Column grouping tolerance (pixels)
 _COL_TOLERANCE = 5
+
+
+def _check_sensitive(text: str) -> bool:
+    """Check if text contains R18/18禁 markers."""
+    return bool(_SENSITIVE_PATTERN.search(text))
 
 
 def _extract_vertical_text(page: pdfplumber.page.Page) -> str:
@@ -151,6 +159,10 @@ def parse_pdf(pdf_path: str | Path) -> NovelPdf:
     with pdfplumber.open(str(pdf_path)) as pdf:
         total_pages = len(pdf.pages)
 
+        # Page 1 (index 0) — cover page, check for R18 markers
+        cover_text = pdf.pages[0].extract_text() or "" if total_pages > 0 else ""
+        is_sensitive = _check_sensitive(cover_text)
+
         # Page 2 (index 1) contains metadata
         info_text = _extract_vertical_text(pdf.pages[1]) if total_pages > 1 else ""
         metadata = _parse_metadata(info_text)
@@ -187,4 +199,5 @@ def parse_pdf(pdf_path: str | Path) -> NovelPdf:
         tags=[],  # なろう PDFs don't include tags
         body=body,
         source_path=str(pdf_path),
+        is_sensitive=is_sensitive,
     )

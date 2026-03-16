@@ -56,8 +56,20 @@ def _parse_novel_file(file_path: Path) -> dict:
     return _parse_txt_file(file_path)
 
 
+_SENSITIVE_TAGS = {"18禁", "R-18", "R18"}
+
+
+def _check_sensitive_tags(tags: list[str]) -> bool:
+    """Check if any tag indicates sensitive content."""
+    return any(t.strip() in _SENSITIVE_TAGS for t in tags)
+
+
 def _parse_txt_file(file_path: Path) -> dict:
-    """Parse a Pixiv novel text file."""
+    """Parse a novel text file (Pixiv or Fanbox format).
+
+    Pixiv format: line 6 starts with "Tags:" followed by body at line 8+.
+    Fanbox/tagless format: no Tags line, body starts at line 6+.
+    """
     stem = file_path.stem
     novel_id = stem.split("_", 1)[0]  # Pixiv ID as string
     title = stem.split("_", 1)[1] if "_" in stem else stem
@@ -72,8 +84,10 @@ def _parse_txt_file(file_path: Path) -> dict:
     tags: list[str] = []
     if tag_line.startswith("Tags:"):
         tags = [t.strip() for t in tag_line[5:].split(",") if t.strip()]
-
-    body = "\n".join(lines[8:])
+        body = "\n".join(lines[8:])
+    else:
+        # No Tags line — body starts at line 6
+        body = "\n".join(lines[6:])
 
     return {
         "novel_id": novel_id,
@@ -82,6 +96,7 @@ def _parse_txt_file(file_path: Path) -> dict:
         "url": url,
         "tags": tags,
         "body": body,
+        "is_sensitive": _check_sensitive_tags(tags),
     }
 
 
@@ -95,6 +110,7 @@ def _parse_pdf_file(file_path: Path) -> dict:
         "url": "",
         "tags": novel.tags,
         "body": novel.body,
+        "is_sensitive": novel.is_sensitive,
     }
 
 
@@ -111,6 +127,22 @@ def _ensure_label(conn: sqlite3.Connection, name: str) -> str:
         (label_id, name),
     )
     return label_id
+
+
+def _auto_label_from_master(
+    conn: sqlite3.Connection, title: str, body: str,
+) -> list[str]:
+    """Match existing novel_labels against title+body by substring search.
+
+    Returns list of matched label names.
+    """
+    rows = conn.execute("SELECT name FROM novel_labels ORDER BY length(name) DESC").fetchall()
+    text = title + "\n" + body
+    matched: list[str] = []
+    for (name,) in rows:
+        if len(name) >= 2 and name in text:
+            matched.append(name)
+    return matched
 
 
 def _ensure_morpheme(
@@ -160,12 +192,18 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) ->
 
     # 1. Insert novel (id = Pixiv ID as string)
     conn.execute(
-        "INSERT INTO novels (id, title, author, url) VALUES (?, ?, ?, ?)",
-        (novel_id, data["title"], data["author"], data["url"]),
+        "INSERT INTO novels (id, title, author, url, is_sensitive) VALUES (?, ?, ?, ?, ?)",
+        (novel_id, data["title"], data["author"], data["url"], data.get("is_sensitive", False)),
     )
 
-    # 2. Labels (tags)
-    for tag_name in data["tags"]:
+    # 2. Labels (tags) — auto-label from master if no tags
+    tag_names = data["tags"]
+    if not tag_names:
+        tag_names = _auto_label_from_master(conn, data["title"], data["body"])
+        if tag_names:
+            print(f"    Auto-labeled: {', '.join(tag_names[:10])}{'...' if len(tag_names) > 10 else ''}")
+
+    for tag_name in tag_names:
         tag_name = tag_name.strip()
         if not tag_name:
             continue
