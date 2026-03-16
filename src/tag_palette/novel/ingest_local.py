@@ -8,7 +8,7 @@ CLI arguments override .env values.
 
 Supported formats:
     .txt  — Pixiv novel text ({pixiv_id}_{title}.txt)
-    .pdf  — なろう PDF novel ({n_code}.pdf)
+    .pdf  — なろう PDF novel ({n_code}.pdf) → series + chapters
 """
 
 from __future__ import annotations
@@ -25,11 +25,11 @@ from dotenv import load_dotenv
 try:
     from .chunker import chunk_text
     from .morpheme import extract_morphemes
-    from .pdf_parser import parse_pdf
+    from .pdf_parser import parse_pdf_as_series
 except ImportError:
     from chunker import chunk_text
     from morpheme import extract_morphemes
-    from pdf_parser import parse_pdf
+    from pdf_parser import parse_pdf_as_series
 
 # Load .env from project root
 _ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
@@ -47,13 +47,6 @@ BATCH_SIZE = 500
 
 def _new_id() -> str:
     return uuid.uuid4().hex
-
-
-def _parse_novel_file(file_path: Path) -> dict:
-    """Parse a novel file (.txt or .pdf) and return metadata + body."""
-    if file_path.suffix.lower() == ".pdf":
-        return _parse_pdf_file(file_path)
-    return _parse_txt_file(file_path)
 
 
 _SENSITIVE_TAGS = {"18禁", "R-18", "R18"}
@@ -97,20 +90,6 @@ def _parse_txt_file(file_path: Path) -> dict:
         "tags": tags,
         "body": body,
         "is_sensitive": _check_sensitive_tags(tags),
-    }
-
-
-def _parse_pdf_file(file_path: Path) -> dict:
-    """Parse a なろう PDF novel file."""
-    novel = parse_pdf(file_path)
-    return {
-        "novel_id": novel.n_code,
-        "title": novel.title,
-        "author": novel.author,
-        "url": "",
-        "tags": novel.tags,
-        "body": novel.body,
-        "is_sensitive": novel.is_sensitive,
     }
 
 
@@ -171,51 +150,17 @@ def _ensure_morpheme(
     return morph_id
 
 
-def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
-    """Process a single novel file into the production DB.
+def _ingest_novel_chunks(
+    conn: sqlite3.Connection,
+    novel_id: str,
+    body: str,
+    morph_cache: dict,
+) -> tuple[int, int]:
+    """Chunk text, extract morphemes, and insert into DB.
 
-    Returns summary stats.
+    Returns (num_chunks, num_morpheme_types).
     """
-    data = _parse_novel_file(file_path)
-    novel_id = data["novel_id"]
-
-    # Skip if already exists
-    existing = conn.execute(
-        "SELECT id FROM novels WHERE id = ?", (novel_id,)
-    ).fetchone()
-    if existing:
-        return {
-            "novel_id": novel_id,
-            "title": data["title"],
-            "skipped": True,
-        }
-
-    # 1. Insert novel (id = Pixiv ID as string)
-    conn.execute(
-        "INSERT INTO novels (id, title, author, url, is_sensitive) VALUES (?, ?, ?, ?, ?)",
-        (novel_id, data["title"], data["author"], data["url"], data.get("is_sensitive", False)),
-    )
-
-    # 2. Labels (tags) — auto-label from master if no tags
-    tag_names = data["tags"]
-    if not tag_names:
-        tag_names = _auto_label_from_master(conn, data["title"], data["body"])
-        if tag_names:
-            print(f"    Auto-labeled: {', '.join(tag_names[:10])}{'...' if len(tag_names) > 10 else ''}")
-
-    for tag_name in tag_names:
-        tag_name = tag_name.strip()
-        if not tag_name:
-            continue
-        label_id = _ensure_label(conn, tag_name)
-        assoc_id = _new_id()
-        conn.execute(
-            "INSERT OR IGNORE INTO novel_label_associations (id, novel_id, label_id) VALUES (?, ?, ?)",
-            (assoc_id, novel_id, label_id),
-        )
-
-    # 3. Chunks
-    chunks = chunk_text(data["body"])
+    chunks = chunk_text(body)
     chunk_ids: list[str] = []
     for c in chunks:
         chunk_id = _new_id()
@@ -225,7 +170,6 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) ->
             (chunk_id, novel_id, c.seq, c.kind, c.body),
         )
 
-    # 4. Morphemes per chunk
     total_morphemes = 0
     cm_batch: list[tuple] = []
     for chunk, chunk_id in zip(chunks, chunk_ids):
@@ -248,15 +192,133 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) ->
             cm_batch,
         )
 
+    return len(chunks), total_morphemes
+
+
+def ingest_txt_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
+    """Process a single .txt novel file into the DB.
+
+    Returns summary stats.
+    """
+    data = _parse_txt_file(file_path)
+    novel_id = data["novel_id"]
+
+    # Skip if already exists
+    existing = conn.execute(
+        "SELECT id FROM novels WHERE id = ?", (novel_id,)
+    ).fetchone()
+    if existing:
+        return {
+            "novel_id": novel_id,
+            "title": data["title"],
+            "skipped": True,
+        }
+
+    # 1. Insert novel
+    conn.execute(
+        "INSERT INTO novels (id, title, author, url, is_sensitive) VALUES (?, ?, ?, ?, ?)",
+        (novel_id, data["title"], data["author"], data["url"], data.get("is_sensitive", False)),
+    )
+
+    # 2. Labels (tags)
+    tag_names = data["tags"]
+    if not tag_names:
+        tag_names = _auto_label_from_master(conn, data["title"], data["body"])
+        if tag_names:
+            print(f"    Auto-labeled: {', '.join(tag_names[:10])}{'...' if len(tag_names) > 10 else ''}")
+
+    for tag_name in tag_names:
+        tag_name = tag_name.strip()
+        if not tag_name:
+            continue
+        label_id = _ensure_label(conn, tag_name)
+        assoc_id = _new_id()
+        conn.execute(
+            "INSERT OR IGNORE INTO novel_label_associations (id, novel_id, label_id) VALUES (?, ?, ?)",
+            (assoc_id, novel_id, label_id),
+        )
+
+    # 3. Chunks + morphemes
+    num_chunks, num_morphemes = _ingest_novel_chunks(conn, novel_id, data["body"], morph_cache)
+
     conn.commit()
 
     return {
         "novel_id": novel_id,
         "title": data["title"],
-        "num_chunks": len(chunks),
+        "num_chunks": num_chunks,
+        "num_morpheme_types": num_morphemes,
+        "skipped": False,
+    }
+
+
+def ingest_pdf_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
+    """Process a なろう PDF file as a series with chapters.
+
+    Creates one novel_series record and one novels record per chapter.
+    Returns summary stats.
+    """
+    series = parse_pdf_as_series(file_path)
+    series_id = series.n_code
+
+    # Skip if series already exists
+    existing = conn.execute(
+        "SELECT id FROM novel_series WHERE id = ?", (series_id,)
+    ).fetchone()
+    if existing:
+        return {
+            "novel_id": series_id,
+            "title": series.title,
+            "skipped": True,
+        }
+
+    # 1. Insert series
+    conn.execute(
+        "INSERT INTO novel_series (id, name) VALUES (?, ?)",
+        (series_id, series.title),
+    )
+
+    # 2. Insert each chapter as a novel
+    total_chunks = 0
+    total_morphemes = 0
+    for chapter in series.chapters:
+        novel_id = f"{series_id}_{chapter.seq}"
+
+        conn.execute(
+            "INSERT INTO novels (id, title, author, url, is_sensitive, series_id, series_seq) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (novel_id, chapter.title, series.author, series.url,
+             series.is_sensitive, series_id, chapter.seq),
+        )
+
+        num_chunks, num_morphemes = _ingest_novel_chunks(
+            conn, novel_id, chapter.body, morph_cache,
+        )
+        total_chunks += num_chunks
+        total_morphemes += num_morphemes
+
+        print(f"    Ch.{chapter.seq}: {chapter.title} - {num_chunks} chunks")
+
+    conn.commit()
+
+    return {
+        "novel_id": series_id,
+        "title": series.title,
+        "num_chapters": len(series.chapters),
+        "num_chunks": total_chunks,
         "num_morpheme_types": total_morphemes,
         "skipped": False,
     }
+
+
+def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
+    """Process a single novel file into the production DB.
+
+    Dispatches to txt or pdf handler based on file extension.
+    """
+    if file_path.suffix.lower() == ".pdf":
+        return ingest_pdf_file(conn, file_path, morph_cache)
+    return ingest_txt_file(conn, file_path, morph_cache)
 
 
 def ingest_directory(db_path: Path, input_dir: Path, *, dry_run: bool = False) -> list[dict]:
@@ -287,6 +349,11 @@ def ingest_directory(db_path: Path, input_dir: Path, *, dry_run: bool = False) -
         result = ingest_file(conn, f, morph_cache)
         if result.get("skipped"):
             print(f"  [{i}/{len(files)}] SKIP {result['novel_id']} {result['title']}")
+        elif result.get("num_chapters"):
+            print(
+                f"  [{i}/{len(files)}] {result['novel_id']} {result['title']}"
+                f" - {result['num_chapters']} chapters, {result['num_chunks']} chunks, {result['num_morpheme_types']} morphemes"
+            )
         else:
             print(
                 f"  [{i}/{len(files)}] {result['novel_id']} {result['title']}"

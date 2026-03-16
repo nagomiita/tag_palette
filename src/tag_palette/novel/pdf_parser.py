@@ -1,13 +1,14 @@
 """Parse 'なろう' PDF novels into plain text with metadata.
 
 Handles vertical (縦書き) Japanese PDF layout by reconstructing text
-from character-level coordinates.
+from character-level coordinates. Supports chapter-level splitting for
+series registration.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pdfplumber
@@ -15,7 +16,7 @@ import pdfplumber
 
 @dataclass
 class NovelPdf:
-    """Parsed novel from a なろう PDF."""
+    """Parsed novel from a なろう PDF (single work, legacy)."""
 
     n_code: str
     title: str
@@ -24,10 +25,35 @@ class NovelPdf:
     tags: list[str]
     body: str
     source_path: str
+    url: str = ""
     is_sensitive: bool = False
 
 
+@dataclass
+class NovelPdfChapter:
+    """A single chapter extracted from a なろう PDF."""
+
+    title: str
+    body: str
+    seq: int
+
+
+@dataclass
+class NovelPdfSeries:
+    """A なろう PDF parsed as a series with chapters."""
+
+    n_code: str
+    title: str
+    author: str
+    description: str
+    url: str
+    is_sensitive: bool
+    chapters: list[NovelPdfChapter]
+    source_path: str
+
+
 _SENSITIVE_PATTERN = re.compile(r"18禁|R[\-\s]?18|Ｒ[\-\s]?１８")
+_URL_PATTERN = re.compile(r"https?://[^\s　]+")
 
 # Column grouping tolerance (pixels)
 _COL_TOLERANCE = 5
@@ -36,6 +62,12 @@ _COL_TOLERANCE = 5
 def _check_sensitive(text: str) -> bool:
     """Check if text contains R18/18禁 markers."""
     return bool(_SENSITIVE_PATTERN.search(text))
+
+
+def _extract_url(text: str) -> str:
+    """Extract the first URL from text."""
+    m = _URL_PATTERN.search(text)
+    return m.group(0) if m else ""
 
 
 def _extract_vertical_text(page: pdfplumber.page.Page) -> str:
@@ -71,6 +103,37 @@ def _extract_vertical_text(page: pdfplumber.page.Page) -> str:
     return "\n".join(lines)
 
 
+def _detect_chapter_title(page: pdfplumber.page.Page) -> str | None:
+    """Detect if a page starts with a bold chapter title.
+
+    In なろう PDFs, chapter titles appear as bold text in the rightmost
+    column (first column in vertical layout).
+
+    Returns the chapter title string, or None if not a chapter start.
+    """
+    chars = [c for c in page.chars if c["text"].strip()]
+    if not chars:
+        return None
+
+    # Find the rightmost column (highest x0 = first column in vertical text)
+    max_x0 = max(c["x0"] for c in chars)
+    first_col = [c for c in chars if abs(c["x0"] - max_x0) < _COL_TOLERANCE]
+    first_col.sort(key=lambda c: c["top"])
+
+    if not first_col:
+        return None
+
+    # Check if the first character in this column is Bold
+    if "Bold" not in first_col[0].get("fontname", ""):
+        return None
+
+    # Collect all bold chars from the first column
+    bold_text = "".join(
+        c["text"] for c in first_col if "Bold" in c.get("fontname", "")
+    )
+    return bold_text.strip() or None
+
+
 def _parse_metadata(info_text: str) -> dict[str, str]:
     """Parse metadata from the info page (usually page 2).
 
@@ -86,10 +149,15 @@ def _parse_metadata(info_text: str) -> dict[str, str]:
     """
     result: dict[str, str] = {}
 
-    # Title
-    m = re.search(r"【作品タイトル】\s*\n(.+?)(?=\n【)", info_text, re.DOTALL)
+    # Title (【作品タイトル】 or 【小説タイトル】)
+    m = re.search(r"【(?:作品|小説)タイトル】\s*\n(.+?)(?=\n【)", info_text, re.DOTALL)
     if m:
-        result["title"] = m.group(1).strip().replace("\n", "")
+        # Take only non-page-number lines (page numbers are standalone digits)
+        title_lines = [
+            line for line in m.group(1).strip().split("\n")
+            if not re.fullmatch(r"\d{1,4}", line.strip())
+        ]
+        result["title"] = "".join(title_lines).strip()
 
     # N-code — find the line starting with Ｎ between 【Ｎコード】 and next 【
     m = re.search(r"【Ｎコード】\s*\n(.+?)(?=\n【)", info_text, re.DOTALL)
@@ -146,7 +214,7 @@ def _clean_body_text(text: str) -> str:
 
 
 def parse_pdf(pdf_path: str | Path) -> NovelPdf:
-    """Parse a なろう PDF novel file.
+    """Parse a なろう PDF novel file (legacy single-novel mode).
 
     Args:
         pdf_path: Path to the PDF file.
@@ -162,6 +230,10 @@ def parse_pdf(pdf_path: str | Path) -> NovelPdf:
         # Page 1 (index 0) — cover page, check for R18 markers
         cover_text = pdf.pages[0].extract_text() or "" if total_pages > 0 else ""
         is_sensitive = _check_sensitive(cover_text)
+
+        # Last page — extract URL (syosetu.com link)
+        last_text = pdf.pages[-1].extract_text() or "" if total_pages > 0 else ""
+        url = _extract_url(last_text)
 
         # Page 2 (index 1) contains metadata
         info_text = _extract_vertical_text(pdf.pages[1]) if total_pages > 1 else ""
@@ -199,5 +271,95 @@ def parse_pdf(pdf_path: str | Path) -> NovelPdf:
         tags=[],  # なろう PDFs don't include tags
         body=body,
         source_path=str(pdf_path),
+        url=url,
         is_sensitive=is_sensitive,
+    )
+
+
+def parse_pdf_as_series(pdf_path: str | Path) -> NovelPdfSeries:
+    """Parse a なろう PDF novel file as a series with chapters.
+
+    Chapters are detected by bold text at the start of a page (rightmost
+    column in vertical layout). Each chapter becomes a separate entry.
+
+    Args:
+        pdf_path: Path to the PDF file.
+
+    Returns:
+        NovelPdfSeries with metadata and chapter list.
+    """
+    pdf_path = Path(pdf_path)
+
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        total_pages = len(pdf.pages)
+
+        # Page 1 (index 0) — cover page, check for R18 markers
+        cover_text = pdf.pages[0].extract_text() or "" if total_pages > 0 else ""
+        is_sensitive = _check_sensitive(cover_text)
+
+        # Last page — extract URL (syosetu.com link)
+        last_text = pdf.pages[-1].extract_text() or "" if total_pages > 0 else ""
+        url = _extract_url(last_text)
+
+        # Page 2 (index 1) contains metadata
+        info_text = _extract_vertical_text(pdf.pages[1]) if total_pages > 1 else ""
+        metadata = _parse_metadata(info_text)
+
+        n_code = metadata.get("n_code", pdf_path.stem)
+        title = metadata.get("title", pdf_path.stem)
+        author = metadata.get("author", "")
+        description = metadata.get("description", "")
+
+        # Scan pages from page 3 onward, split by chapter boundaries
+        # Each chapter boundary = bold title at rightmost column of a page
+        chapters: list[NovelPdfChapter] = []
+        current_title: str | None = None
+        current_body_parts: list[str] = []
+        chapter_seq = 0
+        start_page = 2  # 0-indexed
+
+        for i in range(start_page, total_pages):
+            page = pdf.pages[i]
+
+            # Skip 前書き/後書き header pages
+            page_text = _extract_vertical_text(page)
+            if not page_text or _is_chapter_header_page(page_text):
+                continue
+
+            # Check for chapter boundary
+            chapter_title = _detect_chapter_title(page)
+            if chapter_title:
+                # Save previous chapter if exists
+                if current_title is not None and current_body_parts:
+                    chapter_seq += 1
+                    chapters.append(NovelPdfChapter(
+                        title=current_title,
+                        body="\n".join(current_body_parts),
+                        seq=chapter_seq,
+                    ))
+                    current_body_parts = []
+                current_title = chapter_title
+
+            cleaned = _clean_body_text(page_text)
+            if cleaned.strip():
+                current_body_parts.append(cleaned)
+
+        # Save last chapter
+        if current_title is not None and current_body_parts:
+            chapter_seq += 1
+            chapters.append(NovelPdfChapter(
+                title=current_title,
+                body="\n".join(current_body_parts),
+                seq=chapter_seq,
+            ))
+
+    return NovelPdfSeries(
+        n_code=n_code,
+        title=title,
+        author=author,
+        description=description,
+        url=url,
+        is_sensitive=is_sensitive,
+        chapters=chapters,
+        source_path=str(pdf_path),
     )

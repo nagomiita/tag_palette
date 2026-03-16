@@ -7,13 +7,17 @@
 ## 処理パイプライン
 
 ```
-入力ファイル (.txt / .pdf)
-  ↓ メタデータ抽出（タイトル、著者、URL、タグ）
-  ↓ テキストチャンキング（台詞 / 心の声 / 地の文）
-  ↓ 形態素解析（名詞・動詞・形容詞を抽出）
-  ↓ DB保存（novels, novel_chunks, novel_morphemes 等）
-  ↓ embedding 生成（multilingual-e5-small, 384次元）
-  ↓ ルート管理（分岐・合流パス）
+■ .txt（Pixiv / Fanbox）          ■ .pdf（なろう）
+  ↓ メタデータ抽出                   ↓ メタデータ抽出（2P目 縦書き）
+  ↓ is_sensitive 判定（タグ）         ↓ is_sensitive 判定（1P目 表紙）
+  ↓ 1 file = 1 novel               ↓ URL 抽出（最終ページ）
+  │                                 ↓ 章分割（Bold テキスト検出）
+  │                                 ↓ 1 PDF = 1 series + N novels
+  └──────────┬──────────────────────┘
+             ↓ テキストチャンキング（台詞 / 心の声 / 地の文）
+             ↓ 形態素解析（名詞・動詞・形容詞を抽出）
+             ↓ DB保存（novels, novel_chunks, novel_morphemes 等）
+             ↓ embedding 生成（multilingual-e5-small, 384次元）
 ```
 
 ---
@@ -38,11 +42,48 @@
 
 ### なろう PDF (`{n_code}.pdf`)
 
-| ページ | 内容 |
+1つの PDF を **1 series + N novels（章単位）** として登録する。
+
+| ページ | 内容 | 抽出データ |
+|---|---|---|
+| 1ページ | 表紙 | `is_sensitive` 判定（R18/18禁検出） |
+| 2ページ | メタデータ（縦書き） | 【小説タイトル】【Ｎコード】【作者名】【あらすじ】 |
+| 3ページ〜 | 本文（縦書き） | 章ごとに分割 → 各章が 1 novel |
+| 最終ページ | 奥付 | `novels.url`（小説家になろうの作品URL） |
+
+#### 章の検出
+
+- 各ページの最右列（縦書き先頭列）が **太字（Bold）** で始まる場合、その Bold テキストを章タイトルとして新しい章の開始と判定する
+- 章タイトルはそのまま `novels.title` に設定する（`※` 等の記号も保持）
+
+#### ID 体系
+
+| レコード | id | 例 |
+|---|---|---|
+| novel_series | `{n_code}` | `N5833EQ` |
+| novels（各章） | `{n_code}_{seq}` | `N5833EQ_1`, `N5833EQ_2`, ... |
+
+#### novels カラムの設定
+
+| カラム | 値 |
 |---|---|
-| 1ページ | 表紙 |
-| 2ページ | メタデータ（縦書き）: 【作品タイトル】【Ｎコード】【作者名】【あらすじ】 |
-| 3ページ〜 | 本文（縦書き） |
+| `series_id` | シリーズ ID（= Nコード） |
+| `series_seq` | 章の順番（1-based） |
+| `author` | シリーズ共通（メタデータページから取得） |
+| `url` | シリーズ共通（最終ページから取得） |
+| `is_sensitive` | シリーズ共通（表紙から判定） |
+
+---
+
+## is_sensitive 判定
+
+取り込み時にセンシティブコンテンツを自動判定し、`novels.is_sensitive` に設定する。
+
+| 媒体 | 判定対象 | 判定条件 |
+|---|---|---|
+| Pixiv (.txt) | タグ（7行目） | `18禁`、`R-18`、`R18` のいずれかがタグに含まれる |
+| Fanbox (.txt) | タグ（7行目） | 同上 |
+| なろう (.pdf) | 表紙（1ページ目） | テキストに `18禁`、`R-18`、`R18`（全角含む）が含まれる |
 
 ---
 
@@ -113,7 +154,8 @@
 
 | テーブル | 役割 | Phase |
 |---|---|---|
-| novels | 作品 | 1 |
+| novel_series | シリーズ（なろう PDF 単位） | 1 |
+| novels | 作品（txt: 1ファイル=1作品、pdf: 1章=1作品） | 1 |
 | novel_labels | ラベルマスタ | 1 |
 | novel_label_associations | 作品 ↔ ラベル（N:N） | 1 |
 | novel_chunks | チャンク（台詞/心の声/地の文） | 1 |
@@ -128,15 +170,16 @@
 ### ER図
 
 ```
-novels
-├── N:N ── novel_label_associations ── N:N ── novel_labels
-├── 1:N ── novel_chunks
-│               ├── N:N ── novel_chunk_morphemes ── N:N ── novel_morphemes
-│               ├── 1:1 ── chunk_embeddings
-│               ├── (fork_from) ←── routes
-│               └── (merge_to)  ←── routes
-└── 1:N ── routes
-                └── 1:N ── route_chunks
+novel_series
+└── 1:N ── novels (series_id, series_seq)
+                ├── N:N ── novel_label_associations ── N:N ── novel_labels
+                ├── 1:N ── novel_chunks
+                │               ├── N:N ── novel_chunk_morphemes ── N:N ── novel_morphemes
+                │               ├── 1:1 ── chunk_embeddings
+                │               ├── (fork_from) ←── routes
+                │               └── (merge_to)  ←── routes
+                └── 1:N ── routes
+                                └── 1:N ── route_chunks
 ```
 
 ---
@@ -149,7 +192,7 @@ novels
 | `chunker.py` | テキスト分割（台詞/心の声/地の文 + 地の文再分割） |
 | `morpheme.py` | 形態素解析（MeCab / fugashi） |
 | `embedding.py` | embedding 生成・保存・コサイン類似検索 |
-| `pdf_parser.py` | PDF 縦書きテキスト抽出（pdfplumber） |
+| `pdf_parser.py` | PDF 縦書きテキスト抽出・章分割（pdfplumber） |
 | `route.py` | 分岐ルート CRUD |
 
 ---
