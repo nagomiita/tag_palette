@@ -261,28 +261,30 @@ def ingest_pdf_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict
     series = parse_pdf_as_series(file_path)
     series_id = series.n_code
 
-    # Skip if series already exists
-    existing = conn.execute(
+    # 1. Insert series (skip if already exists)
+    existing_series = conn.execute(
         "SELECT id FROM novel_series WHERE id = ?", (series_id,)
     ).fetchone()
-    if existing:
-        return {
-            "novel_id": series_id,
-            "title": series.title,
-            "skipped": True,
-        }
+    if not existing_series:
+        conn.execute(
+            "INSERT INTO novel_series (id, name) VALUES (?, ?)",
+            (series_id, series.title),
+        )
 
-    # 1. Insert series
-    conn.execute(
-        "INSERT INTO novel_series (id, name) VALUES (?, ?)",
-        (series_id, series.title),
-    )
-
-    # 2. Insert each chapter as a novel
+    # 2. Insert each chapter as a novel (skip existing chapters)
     total_chunks = 0
     total_morphemes = 0
+    ingested_chapters = 0
+    skipped_chapters = 0
     for chapter in series.chapters:
         novel_id = f"{series_id}_{chapter.seq}"
+
+        existing_novel = conn.execute(
+            "SELECT id FROM novels WHERE id = ?", (novel_id,)
+        ).fetchone()
+        if existing_novel:
+            skipped_chapters += 1
+            continue
 
         conn.execute(
             "INSERT INTO novels (id, title, author, url, is_sensitive, series_id, series_seq) "
@@ -296,15 +298,24 @@ def ingest_pdf_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict
         )
         total_chunks += num_chunks
         total_morphemes += num_morphemes
+        ingested_chapters += 1
 
         print(f"    Ch.{chapter.seq}: {chapter.title} - {num_chunks} chunks")
 
     conn.commit()
 
+    if ingested_chapters == 0:
+        return {
+            "novel_id": series_id,
+            "title": series.title,
+            "skipped": True,
+        }
+
     return {
         "novel_id": series_id,
         "title": series.title,
-        "num_chapters": len(series.chapters),
+        "num_chapters": ingested_chapters,
+        "num_chapters_skipped": skipped_chapters,
         "num_chunks": total_chunks,
         "num_morpheme_types": total_morphemes,
         "skipped": False,
