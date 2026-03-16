@@ -1,10 +1,19 @@
-"""Chunk embedding generation, storage, and similarity search."""
+"""Chunk embedding generation, storage, and similarity search.
+
+Usage (CLI):
+    python -m tag_palette.novel.embedding [--db <path>] [--novel-id <id>] [--batch-size <n>]
+"""
 
 from __future__ import annotations
 
+import argparse
+import os
 import sqlite3
+import sys
+from pathlib import Path
 
 import numpy as np
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
 _model: SentenceTransformer | None = None
@@ -111,44 +120,114 @@ def search_similar(
     return results[:top_n]
 
 
+_DEFAULT_BATCH_SIZE = 1024
+
+
 def embed_chunks(
     conn: sqlite3.Connection,
-    novel_id: int | None = None,
+    novel_id: str | None = None,
+    *,
+    batch_size: int = _DEFAULT_BATCH_SIZE,
 ) -> int:
     """Generate and save embeddings for all chunks that don't have one yet.
 
+    Processes in batches to avoid memory issues on large datasets.
     Returns number of newly embedded chunks.
     """
+    where = "WHERE e.chunk_id IS NULL"
+    params: tuple = ()
     if novel_id is not None:
-        rows = conn.execute(
-            """
-            SELECT c.id, c.body FROM novel_chunks c
-            LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
-            WHERE c.novel_id = ? AND e.chunk_id IS NULL
-            """,
-            (novel_id,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT c.id, c.body FROM novel_chunks c
-            LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
-            WHERE e.chunk_id IS NULL
-            """
-        ).fetchall()
+        where = "WHERE c.novel_id = ? AND e.chunk_id IS NULL"
+        params = (novel_id,)
 
-    if not rows:
+    total_pending = conn.execute(
+        f"""
+        SELECT count(*) FROM novel_chunks c
+        LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
+        {where}
+        """,
+        params,
+    ).fetchone()[0]
+
+    if total_pending == 0:
         return 0
 
+    print(f"Pending: {total_pending} chunks")
     model = _get_model()
-    texts = [r[1] for r in rows]
-    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
+    total_done = 0
 
-    for (chunk_id, _), emb in zip(rows, embeddings):
-        blob = emb.astype(np.float32).tobytes()
-        conn.execute(
-            "INSERT OR REPLACE INTO chunk_embeddings (chunk_id, embedding, model) VALUES (?, ?, ?)",
-            (chunk_id, blob, _MODEL_NAME),
-        )
-    conn.commit()
-    return len(rows)
+    while True:
+        rows = conn.execute(
+            f"""
+            SELECT c.id, c.body FROM novel_chunks c
+            LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
+            {where}
+            LIMIT ?
+            """,
+            (*params, batch_size),
+        ).fetchall()
+
+        if not rows:
+            break
+
+        texts = [r[1] for r in rows]
+        embeddings = model.encode(texts, normalize_embeddings=True)
+
+        for (chunk_id, _), emb in zip(rows, embeddings):
+            blob = emb.astype(np.float32).tobytes()
+            conn.execute(
+                "INSERT OR REPLACE INTO chunk_embeddings (chunk_id, embedding, model) VALUES (?, ?, ?)",
+                (chunk_id, blob, _MODEL_NAME),
+            )
+        conn.commit()
+
+        total_done += len(rows)
+        print(f"  {total_done}/{total_pending} embedded")
+
+    return total_done
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+
+
+def main() -> None:
+    load_dotenv(_ENV_PATH)
+
+    parser = argparse.ArgumentParser(
+        description="Generate embeddings for novel chunks that don't have one yet.",
+    )
+    parser.add_argument(
+        "--db", type=Path, default=os.getenv("SQLITE_DB_PATH"),
+        help="DB path (default: SQLITE_DB_PATH from .env)",
+    )
+    parser.add_argument(
+        "--novel-id", type=str, default=None,
+        help="Process only chunks belonging to this novel ID",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=_DEFAULT_BATCH_SIZE,
+        help=f"Batch size for encoding (default: {_DEFAULT_BATCH_SIZE})",
+    )
+    args = parser.parse_args()
+
+    if args.db is None:
+        print("Error: --db not specified and SQLITE_DB_PATH not set in .env", file=sys.stderr)
+        sys.exit(1)
+    if not args.db.exists():
+        print(f"DB not found: {args.db}", file=sys.stderr)
+        sys.exit(1)
+
+    conn = sqlite3.connect(str(args.db))
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    count = embed_chunks(conn, args.novel_id, batch_size=args.batch_size)
+    print(f"\nDone: {count} embeddings generated.")
+    conn.close()
+
+
+if __name__ == "__main__":
+    main()
