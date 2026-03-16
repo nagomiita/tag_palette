@@ -55,6 +55,16 @@ class NovelPdfSeries:
 _SENSITIVE_PATTERN = re.compile(r"18禁|R[\-\s]?18|Ｒ[\-\s]?１８")
 _URL_PATTERN = re.compile(r"https?://[^\s　]+")
 
+# Full-width -> half-width alphabet/digit translation table
+_FULLWIDTH_TO_HALFWIDTH = str.maketrans(
+    "０１２３４５６７８９"
+    "ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ"
+    "ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
+    "0123456789"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz",
+)
+
 # Column grouping tolerance (pixels)
 _COL_TOLERANCE = 5
 
@@ -70,11 +80,26 @@ def _extract_url(text: str) -> str:
     return m.group(0) if m else ""
 
 
-def _extract_vertical_text(page: pdfplumber.page.Page) -> str:
+# Columns with this many characters or more are considered layout wraps
+# (not real line breaks) in vertical text. Determined empirically from
+# なろう PDFs where one vertical line holds ~30 characters.
+_FULL_LINE_THRESHOLD = 29
+
+
+def _extract_vertical_text(
+    page: pdfplumber.page.Page,
+    *,
+    join_lines: bool = True,
+) -> str:
     """Extract text from a vertical (縦書き) PDF page.
 
     Groups characters by x-coordinate (columns), sorts columns
     right-to-left, characters top-to-bottom within each column.
+
+    Args:
+        join_lines: If True, full-length columns (>=29 chars) are joined
+            without line breaks (layout wrap removal). If False, every
+            column is separated by a newline (for metadata parsing).
     """
     chars = [c for c in page.chars if c["text"].strip()]
     if not chars:
@@ -94,13 +119,18 @@ def _extract_vertical_text(page: pdfplumber.page.Page) -> str:
     cols.append(current_col)
 
     # Sort each column top-to-bottom, join chars
-    lines = []
+    # Skip columns that are just page numbers
+    parts: list[str] = []
     for col in cols:
         col.sort(key=lambda c: c["top"])
         line = "".join(c["text"] for c in col)
-        lines.append(line)
+        if _is_page_number(line):
+            continue
+        parts.append(line)
+        if not join_lines or len(line) < _FULL_LINE_THRESHOLD:
+            parts.append("\n")
 
-    return "\n".join(lines)
+    return "".join(parts).strip()
 
 
 def _detect_chapter_title(page: pdfplumber.page.Page) -> str | None:
@@ -131,7 +161,10 @@ def _detect_chapter_title(page: pdfplumber.page.Page) -> str | None:
     bold_text = "".join(
         c["text"] for c in first_col if "Bold" in c.get("fontname", "")
     )
-    return bold_text.strip() or None
+    title = bold_text.strip()
+    if not title:
+        return None
+    return title.translate(_FULLWIDTH_TO_HALFWIDTH)
 
 
 def _parse_metadata(info_text: str) -> dict[str, str]:
@@ -157,7 +190,7 @@ def _parse_metadata(info_text: str) -> dict[str, str]:
             line for line in m.group(1).strip().split("\n")
             if not re.fullmatch(r"\d{1,4}", line.strip())
         ]
-        result["title"] = "".join(title_lines).strip()
+        result["title"] = "".join(title_lines).strip().translate(_FULLWIDTH_TO_HALFWIDTH)
 
     # N-code — find the line starting with Ｎ between 【Ｎコード】 and next 【
     m = re.search(r"【Ｎコード】\s*\n(.+?)(?=\n【)", info_text, re.DOTALL)
@@ -236,7 +269,7 @@ def parse_pdf(pdf_path: str | Path) -> NovelPdf:
         url = _extract_url(last_text)
 
         # Page 2 (index 1) contains metadata
-        info_text = _extract_vertical_text(pdf.pages[1]) if total_pages > 1 else ""
+        info_text = _extract_vertical_text(pdf.pages[1], join_lines=False) if total_pages > 1 else ""
         metadata = _parse_metadata(info_text)
 
         n_code = metadata.get("n_code", pdf_path.stem)
@@ -302,7 +335,7 @@ def parse_pdf_as_series(pdf_path: str | Path) -> NovelPdfSeries:
         url = _extract_url(last_text)
 
         # Page 2 (index 1) contains metadata
-        info_text = _extract_vertical_text(pdf.pages[1]) if total_pages > 1 else ""
+        info_text = _extract_vertical_text(pdf.pages[1], join_lines=False) if total_pages > 1 else ""
         metadata = _parse_metadata(info_text)
 
         n_code = metadata.get("n_code", pdf_path.stem)
@@ -337,8 +370,13 @@ def parse_pdf_as_series(pdf_path: str | Path) -> NovelPdfSeries:
                         body="\n".join(current_body_parts),
                         seq=chapter_seq,
                     ))
-                    current_body_parts = []
+                # Discard any pages before the first chapter title
+                current_body_parts = []
                 current_title = chapter_title
+
+            # Only collect body text after the first chapter title is found
+            if current_title is None:
+                continue
 
             cleaned = _clean_body_text(page_text)
             if cleaned.strip():

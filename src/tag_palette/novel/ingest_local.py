@@ -374,9 +374,23 @@ def ingest_directory(db_path: Path, input_dir: Path, *, dry_run: bool = False) -
 
     conn.close()
 
-    ingested = sum(1 for r in results if not r.get("skipped"))
-    skipped = sum(1 for r in results if r.get("skipped"))
-    print(f"\nDone: {ingested} ingested, {skipped} skipped.")
+    ingested_results = [r for r in results if not r.get("skipped")]
+    skipped_results = [r for r in results if r.get("skipped")]
+
+    print(f"\n{'=' * 50}")
+    if ingested_results:
+        print(f"Ingested ({len(ingested_results)}):")
+        for r in ingested_results:
+            if r.get("num_chapters"):
+                print(f"  {r['novel_id']} {r['title']} ({r['num_chapters']} chapters, {r['num_chunks']} chunks)")
+            else:
+                print(f"  {r['novel_id']} {r['title']} ({r['num_chunks']} chunks)")
+    if skipped_results:
+        print(f"Skipped ({len(skipped_results)}):")
+        for r in skipped_results:
+            print(f"  {r['novel_id']} {r['title']}")
+    print(f"{'=' * 50}")
+    print(f"Done: {len(ingested_results)} ingested, {len(skipped_results)} skipped.")
     return results
 
 
