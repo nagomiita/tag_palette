@@ -25,11 +25,11 @@ from dotenv import load_dotenv
 try:
     from .chunker import chunk_text
     from .morpheme import extract_morphemes
-    from .pdf_parser import parse_pdf_as_series
+    from .pdf_parser import parse_pdf, parse_pdf_as_series
 except ImportError:
     from chunker import chunk_text
     from morpheme import extract_morphemes
-    from pdf_parser import parse_pdf_as_series
+    from pdf_parser import parse_pdf, parse_pdf_as_series
 
 # Load .env from project root
 _ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
@@ -252,13 +252,53 @@ def ingest_txt_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict
     }
 
 
-def ingest_pdf_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
-    """Process a なろう PDF file as a series with chapters.
+def _ingest_pdf_single(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
+    """Process a なろう PDF with no chapters as a single novel (no series)."""
+    novel = parse_pdf(file_path)
+    novel_id = novel.n_code
 
-    Creates one novel_series record and one novels record per chapter.
-    Returns summary stats.
+    existing = conn.execute(
+        "SELECT id FROM novels WHERE id = ?", (novel_id,)
+    ).fetchone()
+    if existing:
+        return {
+            "novel_id": novel_id,
+            "title": novel.title,
+            "skipped": True,
+        }
+
+    conn.execute(
+        "INSERT INTO novels (id, title, author, url, is_sensitive) VALUES (?, ?, ?, ?, ?)",
+        (novel_id, novel.title, novel.author, novel.url, novel.is_sensitive),
+    )
+
+    num_chunks, num_morphemes = _ingest_novel_chunks(
+        conn, novel_id, novel.body, morph_cache,
+    )
+
+    conn.commit()
+
+    return {
+        "novel_id": novel_id,
+        "title": novel.title,
+        "num_chunks": num_chunks,
+        "num_morpheme_types": num_morphemes,
+        "skipped": False,
+    }
+
+
+def ingest_pdf_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) -> dict:
+    """Process a なろう PDF file.
+
+    If chapters are detected (Bold titles), creates series + chapter novels.
+    Otherwise, registers as a single novel without series.
     """
     series = parse_pdf_as_series(file_path)
+
+    # No chapters found -> single novel
+    if not series.chapters:
+        return _ingest_pdf_single(conn, file_path, morph_cache)
+
     series_id = series.n_code
 
     # 1. Insert series (skip if already exists)
@@ -332,11 +372,20 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, morph_cache: dict) ->
     return ingest_txt_file(conn, file_path, morph_cache)
 
 
-def ingest_directory(db_path: Path, input_dir: Path, *, dry_run: bool = False) -> list[dict]:
-    """Process all .txt and .pdf files in a directory into the production DB."""
+def ingest_directory(
+    db_path: Path,
+    input_dir: Path,
+    *,
+    dry_run: bool = False,
+    only: list[str] | None = None,
+) -> list[dict]:
+    """Process .txt and .pdf files in a directory into the production DB."""
     files = sorted(
         [f for f in input_dir.iterdir() if f.suffix.lower() in (".txt", ".pdf")]
     )
+    if only:
+        only_set = set(only)
+        files = [f for f in files if f.stem.split("_", 1)[0] in only_set or f.stem in only_set]
     print(f"Input: {input_dir}")
     print(f"DB:    {db_path}")
     print(f"Files: {len(files)} (.txt: {sum(1 for f in files if f.suffix == '.txt')}, .pdf: {sum(1 for f in files if f.suffix.lower() == '.pdf')})")
@@ -408,6 +457,10 @@ def main() -> None:
         help="Destination DB path (default: SQLITE_DB_PATH from .env)",
     )
     parser.add_argument("--dry-run", action="store_true", help="List files only, do not write")
+    parser.add_argument(
+        "--only", type=str, nargs="+", default=None,
+        help="Only process files whose stem starts with these IDs (e.g. --only N7751GU N0668HS)",
+    )
     args = parser.parse_args()
 
     if args.input_dir is None:
@@ -423,7 +476,7 @@ def main() -> None:
         print(f"DB not found: {args.db}", file=sys.stderr)
         sys.exit(1)
 
-    ingest_directory(args.db, args.input_dir, dry_run=args.dry_run)
+    ingest_directory(args.db, args.input_dir, dry_run=args.dry_run, only=args.only)
 
 
 if __name__ == "__main__":

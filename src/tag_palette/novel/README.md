@@ -7,17 +7,18 @@
 ## 処理パイプライン
 
 ```
-■ .txt（Pixiv / Fanbox）          ■ .pdf（なろう）
-  ↓ メタデータ抽出                   ↓ メタデータ抽出（2P目 縦書き）
-  ↓ is_sensitive 判定（タグ）         ↓ is_sensitive 判定（1P目 表紙）
-  ↓ 1 file = 1 novel               ↓ URL 抽出（最終ページ）
-  │                                 ↓ 章分割（Bold テキスト検出）
-  │                                 ↓ 1 PDF = 1 series + N novels
-  └──────────┬──────────────────────┘
+■ .txt（Pixiv / Fanbox）          ■ .pdf（なろう）               ■ .pdf（独自形式）
+  ↓ メタデータ抽出                   ↓ メタデータ抽出（2P目）        ↓ CID 文字マッピング
+  ↓ is_sensitive 判定（タグ）         ↓ is_sensitive 判定（1P目）     ↓ 縦書き句読点変換
+  ↓ 1 file = 1 novel               ↓ URL 抽出（最終ページ）        ↓ 章分割（W6 Bold 検出）
+  │                                 ↓ 章分割（Bold テキスト検出）    ↓ 1 PDF = 1 series + N novels
+  │                                 ↓ 1 PDF = 1 series + N novels  │
+  └──────────┬──────────────────────┴──────────────────────────────┘
+             ↓ 全角英数字 → 半角変換
              ↓ テキストチャンキング（台詞 / 心の声 / 地の文）
              ↓ 形態素解析（名詞・動詞・形容詞を抽出）
              ↓ DB保存（novels, novel_chunks, novel_morphemes 等）
-             ↓ embedding 生成（multilingual-e5-small, 384次元）
+             ↓ embedding 生成（別コマンドで実行）
 ```
 
 ---
@@ -53,15 +54,25 @@
 
 #### 章の検出
 
-- 各ページの最右列（縦書き先頭列）が **太字（Bold）** で始まる場合、その Bold テキストを章タイトルとして新しい章の開始と判定する
+- 各ページの最右列（縦書き先頭列）が **太字（MS-Mincho,Bold）** で始まる場合、章の開始と判定
+- 最初の章タイトルが見つかるまでのページ（表紙・あらすじ・注意書き等）は自動でスキップ
 - 章タイトルはそのまま `novels.title` に設定する（`※` 等の記号も保持）
+
+#### 縦書きレイアウトの改行処理
+
+PDF の縦書きテキストは1列あたり約30文字で折り返されるため、レイアウト上の改行と本当の段落区切りを区別する。
+
+| 列の文字数 | 判定 |
+|---|---|
+| 29文字以上 | レイアウト折り返し → 改行なしで次の列と結合 |
+| 28文字以下 | 本当の段落区切り → 改行を挿入 |
 
 #### ID 体系
 
 | レコード | id | 例 |
 |---|---|---|
 | novel_series | `{n_code}` | `N5833EQ` |
-| novels（各章） | `{n_code}_{seq}` | `N5833EQ_1`, `N5833EQ_2`, ... |
+| novels（各章） | `{n_code}_{seq}` | `N5833EQ_1`, `N5833EQ_2` |
 
 #### novels カラムの設定
 
@@ -72,6 +83,34 @@
 | `author` | シリーズ共通（メタデータページから取得） |
 | `url` | シリーズ共通（最終ページから取得） |
 | `is_sensitive` | シリーズ共通（表紙から判定） |
+
+### 独自形式 PDF（`ingest_novels5.py`）
+
+なろう以外の独自フォーマットの縦書き PDF を取り込む専用スクリプト。
+
+#### 特徴
+
+- メタデータページなし（1ページ目から本文開始）
+- フォント: HiraginoSans（W6=章タイトル、W3=本文）
+- 縦書き句読点（`︑→、` `︒→。` `﹁→「` `﹂→」` 等）を横書きに変換
+- **CID 文字マッピング**: フォントの ToUnicode CMap が欠落している文字を手動マッピングで復元
+  - 未マッピングの CID が検出された場合は `UnmappedCIDError` 例外を送出して停止する
+  - `_CID_MAP` にマッピングを追加してから再実行する
+
+#### 章の検出
+
+- HiraginoSans-W6（太字）フォントの文字列を章タイトルとして検出
+
+#### ID 体系
+
+| レコード | id | 例 |
+|---|---|---|
+| novel_series | `sha256(ファイル名)[:32]` | `7a3f8b2c...` |
+| novels（各章） | `{series_id}_{seq}` | `7a3f8b2c..._1` |
+
+#### novels カラムの設定
+
+- `author`, `url`, `is_sensitive` はスクリプト内で直接指定（PDF にメタデータがないため）
 
 ---
 
@@ -84,6 +123,30 @@
 | Pixiv (.txt) | タグ（7行目） | `18禁`、`R-18`、`R18` のいずれかがタグに含まれる |
 | Fanbox (.txt) | タグ（7行目） | 同上 |
 | なろう (.pdf) | 表紙（1ページ目） | テキストに `18禁`、`R-18`、`R18`（全角含む）が含まれる |
+| 独自形式 (.pdf) | — | スクリプト内で直接指定 |
+
+---
+
+## 全角→半角変換
+
+すべての媒体で、タイトル登録時に全角英数字を半角に変換する。
+
+- `Ａ-Ｚ` → `A-Z`、`ａ-ｚ` → `a-z`、`０-９` → `0-9`
+
+---
+
+## 冪等性
+
+すべての取り込みスクリプトは冪等に設計されており、同じデータを複数回実行しても安全。
+
+| 媒体 | スキップ判定 |
+|---|---|
+| Pixiv / Fanbox (.txt) | `novels.id` の存在チェック |
+| なろう (.pdf) | `novel_series.id` + 各章の `novels.id` の存在チェック |
+| 独自形式 (.pdf) | `novel_series.id`（SHA256） + 各章の `novels.id` の存在チェック |
+
+- 既に登録済みのレコードは更新せずスキップ
+- 途中で失敗した場合、未登録の章のみ再取り込みされる
 
 ---
 
@@ -128,6 +191,7 @@
 - **モデル**: `intfloat/multilingual-e5-small`（384次元）
 - **保存形式**: numpy float32 配列を `.tobytes()` で BLOB 保存
 - **類似検索**: アプリケーション側で全チャンクをロードしコサイン類似度を計算
+- **生成**: 取り込みとは別コマンドで実行（バッチ処理、1024件ずつコミット）
 
 ---
 
@@ -154,7 +218,7 @@
 
 | テーブル | 役割 | Phase |
 |---|---|---|
-| novel_series | シリーズ（なろう PDF 単位） | 1 |
+| novel_series | シリーズ（PDF 単位） | 1 |
 | novels | 作品（txt: 1ファイル=1作品、pdf: 1章=1作品） | 1 |
 | novel_labels | ラベルマスタ | 1 |
 | novel_label_associations | 作品 ↔ ラベル（N:N） | 1 |
@@ -188,11 +252,12 @@ novel_series
 
 | ファイル | 役割 |
 |---|---|
-| `ingest_local.py` | CLIエントリポイント・取り込みロジック |
+| `ingest_local.py` | Pixiv/Fanbox (.txt) + なろう (.pdf) の取り込み CLI |
+| `ingest_novels5.py` | 独自形式 PDF の取り込み CLI（CID マッピング・縦書き句読点変換） |
 | `chunker.py` | テキスト分割（台詞/心の声/地の文 + 地の文再分割） |
 | `morpheme.py` | 形態素解析（MeCab / fugashi） |
-| `embedding.py` | embedding 生成・保存・コサイン類似検索 |
-| `pdf_parser.py` | PDF 縦書きテキスト抽出・章分割（pdfplumber） |
+| `embedding.py` | embedding 生成・保存・コサイン類似検索 CLI |
+| `pdf_parser.py` | なろう PDF 縦書きテキスト抽出・章分割（pdfplumber） |
 | `route.py` | 分岐ルート CRUD |
 
 ---
@@ -232,6 +297,8 @@ uv sync
 
 ## 実行方法
 
+### Pixiv / Fanbox / なろう取り込み
+
 ```bash
 # 通常実行（.env のパスを使用）
 uv run python src/tag_palette/novel/ingest_local.py
@@ -241,6 +308,29 @@ uv run python src/tag_palette/novel/ingest_local.py --dry-run
 
 # カスタムパス指定
 uv run python src/tag_palette/novel/ingest_local.py /path/to/novels --db /path/to/local.db
+```
+
+### 独自形式 PDF 取り込み
+
+```bash
+# ディレクトリ内の PDF を取り込み
+uv run python src/tag_palette/novel/ingest_novels5.py /path/to/pdfs --db /path/to/local.db
+
+# ドライラン
+uv run python src/tag_palette/novel/ingest_novels5.py /path/to/pdfs --dry-run
+```
+
+### Embedding 生成
+
+```bash
+# 全未生成チャンクを処理
+uv run python -m tag_palette.novel.embedding --db /path/to/local.db
+
+# 特定の novel_id のみ
+uv run python -m tag_palette.novel.embedding --db /path/to/local.db --novel-id <id>
+
+# バッチサイズ指定
+uv run python -m tag_palette.novel.embedding --db /path/to/local.db --batch-size 512
 ```
 
 ## テスト
