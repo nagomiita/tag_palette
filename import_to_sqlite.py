@@ -1,8 +1,8 @@
-"""Eagle ライブラリの tag_palette.json を Eagle API 経由でインポートする。
+"""Eagle ライブラリの tag_palette.json を SQLite に直接インポートする。
 
 images ディレクトリ内の各 *.info/tag_palette.json を読み取り、
 CSV マスタデータ (danbooru_tags / genre / translation_cache) で補完したうえで
-Eagle API (merge + 専用インポートエンドポイント) に送信する。
+SQLite DB に直接書き込む。
 
 Usage:
     uv run python import_to_sqlite.py \
@@ -12,7 +12,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import base64
 import csv
 import json
 import logging
@@ -24,7 +23,6 @@ from pathlib import Path
 
 import sqlite3
 
-import httpx
 import numpy as np
 
 from tag_palette import is_sensitive
@@ -40,9 +38,7 @@ DANBOORU_CATEGORY_MAP: dict[str, str] = {
     "4": "character",
 }
 
-BATCH_SIZE_TAGS = 500
-BATCH_SIZE_TAG_GENRES = 500
-BATCH_SIZE_ENTRIES = 200
+BATCH_SIZE = 500
 
 
 # ---------------------------------------------------------------------------
@@ -316,12 +312,28 @@ def load_tag_palettes(
 
 
 # ---------------------------------------------------------------------------
-# API クライアント
+# SQLite 直接書き込み
 # ---------------------------------------------------------------------------
+
+_VIDEO_EXTENSIONS = {
+    "mp4", "webm", "mkv", "avi", "mov", "wmv", "flv", "m4v", "mpg", "mpeg",
+}
+_COMIC_TAGS = {"comic", "greyscale", "monochrome", "speech_bubble"}
+
+
+def _detect_media_type(ext: str, tags: dict[str, float] | None = None) -> str:
+    if ext.lower().strip(".") in _VIDEO_EXTENSIONS:
+        return "VIDEO"
+    if tags and _COMIC_TAGS & tags.keys():
+        return "MANGA"
+    return "IMAGE"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _chunked(iterable, size: int):
-    """イテラブルを size 件ずつのチャンクに分割する。"""
     it = iter(iterable)
     while True:
         chunk = list(islice(it, size))
@@ -330,77 +342,31 @@ def _chunked(iterable, size: int):
         yield chunk
 
 
-class EagleApiClient:
-    """Eagle バックエンド API クライアント。"""
-
-    def __init__(self, base_url: str):
-        self.client = httpx.Client(base_url=base_url, timeout=120)
-
-    def close(self) -> None:
-        self.client.close()
-
-    def merge(self, model: str, data: list[dict], *, mode: str = "optimize") -> dict:
-        """POST /orm/merge/{model}"""
-        resp = self.client.post(
-            f"/orm/merge/{model}",
-            json={
-                "data": data,
-                "caller": "tag-palette/import",
-                "mode": mode,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    def import_entries(self, model_name: str, entries: list[dict]) -> dict:
-        """POST /tenant/tag-palette-import/"""
-        resp = self.client.post(
-            "/tenant/tag-palette-import/",
-            json={
-                "model_name": model_name,
-                "entries": entries,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-
-# ---------------------------------------------------------------------------
-# マスタデータ同期（merge API 経由）
-# ---------------------------------------------------------------------------
-
-
-def load_existing_tag_names(db_path: Path) -> dict[str, str]:
-    """DB から既存タグの {id: name} を読み込む。"""
-    conn = sqlite3.connect(str(db_path))
-    try:
-        rows = conn.execute("SELECT id, name FROM tags WHERE name IS NOT NULL").fetchall()
-        return {r[0]: r[1] for r in rows}
-    finally:
-        conn.close()
-
-
 def sync_master_data(
-    api: EagleApiClient,
+    conn: sqlite3.Connection,
     danbooru: dict[str, DanbooruTag],
     genres: dict[str, GenreEntry],
     categories: dict[str, CategoryEntry],
     trans_cache: dict[str, str],
     entry_tags: set[str],
     category_rules: list[CategoryRule] | None = None,
-    existing_tag_names: dict[str, str] | None = None,
 ) -> None:
-    """カテゴリ・ジャンル・タグ・タグジャンルを merge API で同期する。
+    """カテゴリ・ジャンル・タグ・タグジャンルを SQLite に直接書き込む。"""
+    now = _now_iso()
 
-    existing_tag_names が渡された場合、既存タグの name は DB の値を優先し
-    CSV の値で上書きしない。
-    """
+    # 既存タグの name を読み込み（DB の値を優先するため）
+    existing_tag_names: dict[str, str] = {}
+    for row in conn.execute("SELECT id, name FROM tags WHERE name IS NOT NULL"):
+        existing_tag_names[row[0]] = row[1]
 
     # ── 1. カテゴリ ──────────────────────────────────────────
-    cat_data = [{"id": c.id, "name": c.name} for c in categories.values()]
-    if cat_data:
-        api.merge("category", cat_data)
-        logger.info("カテゴリ同期: %d 件", len(cat_data))
+    for cat in categories.values():
+        conn.execute(
+            "INSERT INTO categories (id, name, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name = excluded.name",
+            (cat.id, cat.name, now),
+        )
+    logger.info("カテゴリ同期: %d 件", len(categories))
 
     # カテゴリコード → ID マッピング
     cat_code_to_id: dict[str, str] = {}
@@ -409,30 +375,26 @@ def sync_master_data(
             cat_code_to_id[code] = categories[csv_name].id
 
     # ── 2. ジャンル ──────────────────────────────────────────
-    genre_data = [
-        {"id": g.key, "name": g.ja or g.key}
-        for g in genres.values()
-    ]
-    if genre_data:
-        api.merge("genre", genre_data)
-        logger.info("ジャンル同期: %d 件", len(genre_data))
+    for g in genres.values():
+        conn.execute(
+            "INSERT INTO genres (id, name, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name = excluded.name",
+            (g.key, g.ja or g.key, now),
+        )
+    logger.info("ジャンル同期: %d 件", len(genres))
 
-    # ── 3. タグ（danbooru + translation_cache + entry 未登録分）────
-    tag_data: list[dict] = []
-    tag_genre_data: list[dict] = []
+    # ── 3. タグ ──────────────────────────────────────────────
+    tag_count = 0
+    tag_genre_data: list[tuple[str, str, str]] = []
     seen_tag_ids: set[str] = set()
 
-    existing = existing_tag_names or {}
-
     def _resolve_name(tag_en: str, csv_name: str) -> str:
-        """既存タグは DB の name を優先、新規タグは CSV の name を使う。"""
-        return existing.get(tag_en, csv_name)
+        return existing_tag_names.get(tag_en, csv_name)
 
     # 3a. danbooru_tags
     rule_overrides = 0
     for tag_en, db_tag in danbooru.items():
         category_id = cat_code_to_id.get(db_tag.category)
-        # general(0) のタグはルールでカテゴリを上書き
         if db_tag.category == "0" and category_rules:
             matched = match_category_rule(tag_en, category_rules)
             if matched and matched in categories:
@@ -440,114 +402,165 @@ def sync_master_data(
                 rule_overrides += 1
         tag_ja = _resolve_name(tag_en, db_tag.ja or tag_en)
         sensitive = is_sensitive(tag_en)
-        tag_data.append({
-            "id": tag_en,
-            "name": tag_ja,
-            "categoryId": category_id,
-            "isSensitive": sensitive,
-        })
+        conn.execute(
+            "INSERT INTO tags (id, name, category_id, is_sensitive, is_favorite, disable, created_at) VALUES (?, ?, ?, ?, 0, 0, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name = excluded.name, category_id = excluded.category_id, is_sensitive = excluded.is_sensitive",
+            (tag_en, tag_ja, category_id, sensitive, now),
+        )
+        tag_count += 1
         seen_tag_ids.add(tag_en)
 
-        # tag_genres（決定論的 ID で冪等性を保証）
         if db_tag.genre and db_tag.genre in genres:
-            tag_genre_data.append({
-                "id": f"{tag_en}__{db_tag.genre}",
-                "tagId": tag_en,
-                "genreId": db_tag.genre,
-            })
+            tag_genre_data.append((f"{tag_en}__{db_tag.genre}", tag_en, db_tag.genre))
 
     # 3b. translation_cache（danbooru にないもの）
     for tag_en, tag_ja in trans_cache.items():
         if tag_en not in seen_tag_ids:
             sensitive = is_sensitive(tag_en)
-            tag_data.append({
-                "id": tag_en,
-                "name": _resolve_name(tag_en, tag_ja),
-                "isSensitive": sensitive,
-            })
+            conn.execute(
+                "INSERT INTO tags (id, name, is_sensitive, is_favorite, disable, created_at) VALUES (?, ?, ?, 0, 0, ?) "
+                "ON CONFLICT(id) DO UPDATE SET name = excluded.name, is_sensitive = excluded.is_sensitive",
+                (tag_en, _resolve_name(tag_en, tag_ja), sensitive, now),
+            )
+            tag_count += 1
             seen_tag_ids.add(tag_en)
 
     # 3c. entry にあるが danbooru/translation_cache にないタグ
     for tag_en in entry_tags:
         if tag_en not in seen_tag_ids:
-            tag_data.append({
-                "id": tag_en,
-                "name": _resolve_name(tag_en, tag_en),
-                "isSensitive": is_sensitive(tag_en),
-            })
+            conn.execute(
+                "INSERT INTO tags (id, name, is_sensitive, is_favorite, disable, created_at) VALUES (?, ?, ?, 0, 0, ?) "
+                "ON CONFLICT(id) DO NOTHING",
+                (tag_en, _resolve_name(tag_en, tag_en), is_sensitive(tag_en), now),
+            )
+            tag_count += 1
             seen_tag_ids.add(tag_en)
 
     if rule_overrides:
         logger.info("カテゴリルール上書き: %d 件", rule_overrides)
-
-    # バッチ送信
-    for i, batch in enumerate(_chunked(tag_data, BATCH_SIZE_TAGS)):
-        api.merge("tag", batch)
-        if (i + 1) % 10 == 0 or (i + 1) * BATCH_SIZE_TAGS >= len(tag_data):
-            logger.info("タグ同期: %d / %d 件", min((i + 1) * BATCH_SIZE_TAGS, len(tag_data)), len(tag_data))
+    logger.info("タグ同期: %d 件", tag_count)
 
     # ── 4. タグジャンル ──────────────────────────────────────
-    for batch in _chunked(tag_genre_data, BATCH_SIZE_TAG_GENRES):
-        api.merge("tag_genre", batch)
+    for tg_id, tag_id, genre_id in tag_genre_data:
+        conn.execute(
+            "INSERT INTO tag_genres (id, tag_id, genre_id, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(id) DO NOTHING",
+            (tg_id, tag_id, genre_id, now),
+        )
     if tag_genre_data:
         logger.info("タグジャンル同期: %d 件", len(tag_genre_data))
 
-
-# ---------------------------------------------------------------------------
-# エントリインポート（専用 API 経由）
-# ---------------------------------------------------------------------------
+    conn.commit()
 
 
-def import_entries_via_api(
-    api: EagleApiClient,
+def import_entries(
+    conn: sqlite3.Connection,
     entries: list[TagPaletteEntry],
-) -> None:
-    """tag_palette エントリを専用 API でバッチインポートする。"""
-    total_created = 0
-    total_updated = 0
-    total_media_tags = 0
-    total_auto_tags = 0
+) -> dict[str, int]:
+    """tag_palette エントリを SQLite に直接書き込む。"""
+    now = _now_iso()
+    stats = {
+        "media_created": 0,
+        "media_updated": 0,
+        "media_tags_created": 0,
+        "tags_auto_created": 0,
+    }
 
-    for i, batch in enumerate(_chunked(entries, BATCH_SIZE_ENTRIES)):
-        api_entries = []
-        for entry in batch:
-            api_entry: dict = {
-                "image_id": entry.image_id,
-                "image_name": entry.image_name,
-                "thumbnail_name": entry.thumbnail_name,
-                "ext": entry.ext,
-                "genre": entry.genre,
-                "is_sensitive": entry.is_sensitive,
-                "ai_score": entry.ai_score,
-                "tags": entry.tags,
-            }
-            if entry.tag_embedding:
-                api_entry["tag_embedding"] = base64.b64encode(entry.tag_embedding).decode()
-            if entry.ccip_embedding:
-                api_entry["ccip_embedding"] = base64.b64encode(entry.ccip_embedding).decode()
-            api_entries.append(api_entry)
+    # 既存 media ID を一括取得
+    all_ids = [e.image_id for e in entries]
+    existing_media: set[str] = set()
+    for batch in _chunked(all_ids, BATCH_SIZE):
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(f"SELECT id FROM media WHERE id IN ({placeholders})", batch).fetchall()
+        existing_media.update(r[0] for r in rows)
 
-        # model_name はバッチ内で統一（通常は同一モデル）
-        model_name = batch[0].model_name
-        result = api.import_entries(model_name, api_entries)
+    # 既存タグ ID を一括取得
+    all_tag_ids: set[str] = set()
+    for e in entries:
+        all_tag_ids.update(e.tags.keys())
+    existing_tag_ids: set[str] = set()
+    for batch in _chunked(list(all_tag_ids), BATCH_SIZE):
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(f"SELECT id FROM tags WHERE id IN ({placeholders})", batch).fetchall()
+        existing_tag_ids.update(r[0] for r in rows)
 
-        total_created += result.get("media_created", 0)
-        total_updated += result.get("media_updated", 0)
-        total_media_tags += result.get("media_tags_created", 0)
-        total_auto_tags += result.get("tags_auto_created", 0)
+    # 既存 embedding media_id を一括取得
+    existing_emb: set[str] = set()
+    for batch in _chunked(all_ids, BATCH_SIZE):
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(f"SELECT media_id FROM media_embeddings WHERE media_id IN ({placeholders})", batch).fetchall()
+        existing_emb.update(r[0] for r in rows)
 
-        processed = min((i + 1) * BATCH_SIZE_ENTRIES, len(entries))
-        logger.info("エントリインポート: %d / %d 件", processed, len(entries))
+    for i, entry in enumerate(entries):
+        media_id = entry.image_id
+        file_path = f"images/{entry.image_id}.info/{entry.image_name}"
+        thumbnail_path = f"images/{entry.image_id}.info/{entry.thumbnail_name}"
+        media_type = _detect_media_type(entry.ext, entry.tags)
 
-    logger.info("インポート完了:")
-    if total_created:
-        logger.info("  media_created: %d", total_created)
-    if total_updated:
-        logger.info("  media_updated: %d", total_updated)
-    if total_media_tags:
-        logger.info("  media_tags_created: %d", total_media_tags)
-    if total_auto_tags:
-        logger.info("  tags_auto_created: %d", total_auto_tags)
+        # ── 1. Media UPSERT ───────────────────────────────
+        if media_id in existing_media:
+            if entry.ai_score is not None:
+                conn.execute(
+                    "UPDATE media SET ai_score = ? WHERE id = ? AND ai_score IS NULL",
+                    (entry.ai_score, media_id),
+                )
+                stats["media_updated"] += 1
+        else:
+            conn.execute(
+                "INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path, "
+                "is_sensitive, ai_score, media_type, genre_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
+                 entry.is_sensitive, entry.ai_score, media_type, entry.genre, now),
+            )
+            existing_media.add(media_id)
+            stats["media_created"] += 1
+
+        # ── 2. MediaTags UPSERT ───────────────────────────
+        for tag_id, confidence in entry.tags.items():
+            if tag_id not in existing_tag_ids:
+                conn.execute(
+                    "INSERT INTO tags (id, name, is_favorite, disable, created_at) VALUES (?, ?, 0, 0, ?) ON CONFLICT(id) DO NOTHING",
+                    (tag_id, tag_id, now),
+                )
+                existing_tag_ids.add(tag_id)
+                stats["tags_auto_created"] += 1
+
+            mt_id = f"{media_id}__{tag_id}__{entry.model_name}"
+            conn.execute(
+                "INSERT INTO media_tags (id, media_id, tag_id, confidence, model_name, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET confidence = excluded.confidence",
+                (mt_id, media_id, tag_id, confidence, entry.model_name, now),
+            )
+            stats["media_tags_created"] += 1
+
+        # ── 3. MediaEmbedding UPSERT ──────────────────────
+        if entry.tag_embedding or entry.ccip_embedding:
+            if media_id in existing_emb:
+                if entry.tag_embedding:
+                    conn.execute(
+                        "UPDATE media_embeddings SET tag_embedding = ? WHERE media_id = ? AND tag_embedding IS NULL",
+                        (entry.tag_embedding, media_id),
+                    )
+                if entry.ccip_embedding:
+                    conn.execute(
+                        "UPDATE media_embeddings SET ccip_embedding = ? WHERE media_id = ? AND ccip_embedding IS NULL",
+                        (entry.ccip_embedding, media_id),
+                    )
+            else:
+                conn.execute(
+                    "INSERT INTO media_embeddings (media_id, tag_embedding, ccip_embedding) VALUES (?, ?, ?)",
+                    (media_id, entry.tag_embedding, entry.ccip_embedding),
+                )
+                existing_emb.add(media_id)
+
+        if (i + 1) % 1000 == 0:
+            conn.commit()
+            logger.info("エントリインポート: %d / %d 件", i + 1, len(entries))
+
+    conn.commit()
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -653,24 +666,18 @@ def _backfill_desc_embedding(conn: sqlite3.Connection) -> int:
     return len(rows)
 
 
-def post_import_desc(db_path: Path) -> None:
+def post_import_desc(conn: sqlite3.Connection) -> None:
     """インポート後に desc_text と desc_embedding を補完する。"""
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL")
+    n_desc = _backfill_desc_text(conn)
+    if n_desc:
+        logger.info("desc_text 生成: %d 件", n_desc)
 
-    try:
-        n_desc = _backfill_desc_text(conn)
-        if n_desc:
-            logger.info("desc_text 生成: %d 件", n_desc)
+    n_emb = _backfill_desc_embedding(conn)
+    if n_emb:
+        logger.info("desc_embedding 生成: %d 件", n_emb)
 
-        n_emb = _backfill_desc_embedding(conn)
-        if n_emb:
-            logger.info("desc_embedding 生成: %d 件", n_emb)
-
-        if not n_desc and not n_emb:
-            logger.info("desc 補完: 対象なし")
-    finally:
-        conn.close()
+    if not n_desc and not n_emb:
+        logger.info("desc 補完: 対象なし")
 
 
 # ---------------------------------------------------------------------------
@@ -679,9 +686,9 @@ def post_import_desc(db_path: Path) -> None:
 
 
 def main() -> None:
-    from env_config import get_api_url, get_db_path as _get_db_path, get_image_dir
+    from env_config import get_db_path as _get_db_path, get_image_dir
 
-    parser = argparse.ArgumentParser(description="tag_palette.json → Eagle API インポート")
+    parser = argparse.ArgumentParser(description="tag_palette.json → SQLite 直接インポート")
     parser.add_argument(
         "--image-dir",
         type=Path,
@@ -689,15 +696,15 @@ def main() -> None:
         help="Eagle ライブラリの images ディレクトリ (env: EAGLE_IMAGE_DIR)",
     )
     parser.add_argument(
-        "--api-url",
-        type=str,
-        default=get_api_url(),
-        help="Eagle API の URL (env: EAGLE_API_URL, default: http://localhost:8000)",
+        "--db-path",
+        type=Path,
+        default=_get_db_path(),
+        help="SQLite DB パス (env: SQLITE_DB_PATH)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="読み込みのみ (API 送信しない)",
+        help="読み込みのみ (DB 書き込みしない)",
     )
     parser.add_argument(
         "--force",
@@ -716,6 +723,11 @@ def main() -> None:
         parser.error("--image-dir または環境変数 EAGLE_IMAGE_DIR を指定してください")
     if not args.image_dir.is_dir():
         logger.error("ディレクトリが見つかりません: %s", args.image_dir)
+        sys.exit(1)
+    if not args.db_path:
+        parser.error("--db-path または環境変数 SQLITE_DB_PATH を指定してください")
+    if not args.db_path.exists():
+        logger.error("DB が見つかりません: %s", args.db_path)
         sys.exit(1)
 
     # 今回の実行時刻を記録 (探索前に取得)
@@ -761,39 +773,41 @@ def main() -> None:
                 )
         return
 
-    # 全エントリのタグ名を収集（マスタデータ同期用）
+    # 全エントリのタグ名を収集
     all_entry_tags: set[str] = set()
     for e in entries:
         all_entry_tags.update(e.tags.keys())
 
-    # API 経由でインポート
-    api = EagleApiClient(args.api_url)
+    # SQLite に直接書き込み
+    conn = sqlite3.connect(str(args.db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+
     try:
-        logger.info("Eagle API: %s", args.api_url)
+        logger.info("DB: %s", args.db_path)
 
-        # 1. マスタデータ同期（既存タグ名を保護）
-        existing_names: dict[str, str] = {}
-        db_path = _get_db_path()
-        if db_path and db_path.exists():
-            existing_names = load_existing_tag_names(db_path)
-            logger.info("既存タグ名読み込み: %d 件", len(existing_names))
-
+        # 1. マスタデータ同期
         sync_master_data(
-            api, danbooru, genre_csv, category_csv, trans_cache,
-            all_entry_tags, category_rules, existing_names,
+            conn, danbooru, genre_csv, category_csv, trans_cache,
+            all_entry_tags, category_rules,
         )
 
         # 2. エントリインポート
-        import_entries_via_api(api, entries)
-    finally:
-        api.close()
+        stats = import_entries(conn, entries)
 
-    # 3. desc_text + desc_embedding 補完
-    db_path = _get_db_path()
-    if db_path and db_path.exists():
-        post_import_desc(db_path)
-    else:
-        logger.warning("SQLITE_DB_PATH が未設定または存在しないため desc 補完をスキップ")
+        logger.info("インポート完了:")
+        for key, val in stats.items():
+            if val:
+                logger.info("  %s: %d", key, val)
+
+        # 3. desc_text + desc_embedding 補完（オプション）
+        try:
+            post_import_desc(conn)
+        except ImportError as e:
+            logger.info("desc 補完スキップ（モジュール未インストール: %s）", e)
+
+    finally:
+        conn.close()
 
     save_last_import(args.image_dir, run_time)
 
