@@ -200,29 +200,58 @@ def convert_to_webm(
     return output_path
 
 
+SUPPORTED_EXTENSIONS = {".gif", ".webm", ".mp4", ".avi", ".mkv", ".mov"}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert GIF/video to upscaled WebM using CDC super-resolution"
     )
-    parser.add_argument("input", help="Input file path (GIF, WebM, MP4, etc.)")
-    parser.add_argument("-o", "--output", help="Output WebM file path")
+    parser.add_argument("input", help="Input file or directory path")
+    parser.add_argument("-o", "--output", help="Output WebM file path (only for single file input)")
     parser.add_argument("--tile-size", type=int, default=512, help="Tile size for upscaling")
     parser.add_argument("--tile-overlap", type=int, default=64, help="Tile overlap for upscaling")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size for upscaling")
 
     args = parser.parse_args()
 
-    if not Path(args.input).exists():
+    input_path = Path(args.input)
+    if not input_path.exists():
         print(f"Error: {args.input} does not exist", file=sys.stderr)
         sys.exit(1)
 
-    convert_to_webm(
-        input_path=args.input,
-        output_path=args.output,
-        tile_size=args.tile_size,
-        tile_overlap=args.tile_overlap,
-        batch_size=args.batch_size,
-    )
+    if input_path.is_dir():
+        if args.output:
+            print("Error: --output cannot be used with directory input", file=sys.stderr)
+            sys.exit(1)
+        files = sorted(
+            f for f in input_path.iterdir()
+            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+        if not files:
+            print(f"No supported files found in {input_path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Found {len(files)} file(s) in {input_path}\n")
+        for i, file in enumerate(files, 1):
+            print(f"=== [{i}/{len(files)}] {file.name} ===")
+            try:
+                convert_to_webm(
+                    input_path=str(file),
+                    tile_size=args.tile_size,
+                    tile_overlap=args.tile_overlap,
+                    batch_size=args.batch_size,
+                )
+            except Exception as e:
+                print(f"Error processing {file.name}: {e}", file=sys.stderr)
+            print()
+    else:
+        convert_to_webm(
+            input_path=args.input,
+            output_path=args.output,
+            tile_size=args.tile_size,
+            tile_overlap=args.tile_overlap,
+            batch_size=args.batch_size,
+        )
 
 
 if __name__ == "__main__":

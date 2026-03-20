@@ -211,7 +211,6 @@ def _build_glossary_via_llm(
     )
 
     raw = _strip_think(response.message.content)
-    print(f"  [DEBUG] Raw glossary response ({len(raw)} chars):\n{raw[:500]}")
     # Parse only well-formed glossary lines: "中国語 → 日本語"
     lines = []
     for line in raw.split("\n"):
@@ -299,12 +298,17 @@ def _parse_translation_response(response_text: str) -> tuple[str, str]:
         return text, ""
 
 
+def _count_chinese_leak(text: str) -> int:
+    """Count suspect untranslated Chinese characters in text."""
+    return len(_CN_ONLY_CHARS.findall(text))
+
+
 def _warn_chinese_leak(text: str, chunk_index: int) -> None:
     """Warn if translated text contains likely untranslated Chinese."""
-    suspects = _CN_ONLY_CHARS.findall(text)
-    if len(suspects) > 3:
+    count = _count_chinese_leak(text)
+    if count > 3:
         print(f"    WARNING: Chunk {chunk_index + 1} may contain untranslated Chinese "
-              f"({len(suspects)} suspect chars)")
+              f"({count} suspect chars)")
 
 
 def _translate_chunk(
@@ -332,6 +336,9 @@ def _translate_chunk(
 文体の指針:
 - 硬い直訳ではなく、日本のライトノベルのような読みやすい文体にしてください
 - 「体躯」→「身体」、「梳洗」→「身支度」のように、自然な日本語表現に意訳してください
+- 「魔法」はそのまま「魔法」と訳してください（「マジック」にしないでください）
+- 「性器」は「秘部」「秘所」と訳してください（「セックス」にしないでください）
+- 中国語の四字熟語や慣用句は、意味が通じる日本語に意訳してください
 
 以下の用語対応表に必ず従ってください（表にある語は必ず対応する日本語で統一）:
 {glossary}
