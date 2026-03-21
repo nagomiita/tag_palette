@@ -27,6 +27,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+audio = [
+    "librosa>=0.10.0",
+    "openai-whisper>=20231117",
+    "panns-inference>=0.1.0",
+]
 dev = [
     "pytest>=8.3.5",
 ]
