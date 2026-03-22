@@ -2,7 +2,7 @@
 
 Usage:
     uv run python samples/run.py
-    uv run python samples/run.py --model wd-vit-large-tagger-v3
+    uv run python samples/run.py --model ViT_Large
     uv run python samples/run.py --all-models
     uv run python samples/run.py --batch          # バッチ処理モード
 """
@@ -87,7 +87,7 @@ def run_batch(images: list[Path], args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="sample画像のタグ生成")
     parser.add_argument(
-        "--model", default="wd-eva02-large-tagger-v3", help="使用するモデル名"
+        "--model", default="EVA02_Large", help="使用するモデル名"
     )
     parser.add_argument("--all-models", action="store_true", help="全モデルで推論")
     parser.add_argument(
