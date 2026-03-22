@@ -29,7 +29,6 @@ from PIL import Image
 
 from tag_palette import (
     generate_tags,
-    is_sensitive,
     load_tag_embeddings,
     load_translation_cache,
     save_tag_embeddings,
@@ -37,6 +36,7 @@ from tag_palette import (
     tags_to_embedding,
     translate_tags,
 )
+from tag_palette.sensitive import detect_sensitive
 from tag_palette._csv_reader import load_clean_tag_csv
 from tag_palette.genre import _get_genre_df
 
@@ -292,6 +292,7 @@ def write_tags_to_eagle(
     eagle_image: EagleImage,
     tags: dict[str, float],
     model_name: str,
+    ratings: dict[str, float] | None = None,
 ) -> None:
     """タグの日本語訳を Eagle の metadata.json の annotation に書き込み、
     tag_palette.json にタグ生データを保存する。"""
@@ -358,14 +359,28 @@ def write_tags_to_eagle(
     # tag_palette.json にタグ生データ保存
     try:
         tp_path = eagle_image.info_dir / "tag_palette.json"
-        sensitive = any(is_sensitive(t) for t in tag_names)
+
+        # 統合センシティブ判定 (WD14 rating → anime_rating → タグ辞書)
+        image_for_rating = None
+        if is_image_file(eagle_image):
+            target = eagle_image.thumbnail_path if eagle_image.thumbnail_path.exists() else eagle_image.image_path
+            image_for_rating = str(target)
+
+        sensitive_result = detect_sensitive(
+            ratings=ratings,
+            image=image_for_rating,
+        )
+
         tp_data = {
             "id": eagle_image.eagle_id,
             "name": eagle_image.image_path.name,
             "thumbnail_name": eagle_image.thumbnail_path.name,
             "ext": eagle_image.ext,
             "genre": genre,
-            "is_sensitive": sensitive,
+            "is_sensitive": sensitive_result["is_sensitive"],
+            "sensitive_method": sensitive_result["method"],
+            "wd14_ratings": sensitive_result["wd14_ratings"],
+            "anime_rating": sensitive_result["anime_rating"],
             "ai_score": ai_score,
             "model_name": model_name,
             "tags": tags,
@@ -466,6 +481,7 @@ def main() -> None:
                     eagle_image,
                     tag_results[0].tags,
                     tag_results[0].model_name,
+                    ratings=tag_results[0].ratings,
                 )
                 processed += 1
                 if processed % SAVE_INTERVAL == 0:

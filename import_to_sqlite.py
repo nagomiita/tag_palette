@@ -25,8 +25,6 @@ import sqlite3
 
 import numpy as np
 
-from tag_palette import is_sensitive
-
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent / "src" / "tag_palette" / "data"
@@ -401,11 +399,10 @@ def sync_master_data(
                 category_id = matched
                 rule_overrides += 1
         tag_ja = _resolve_name(tag_en, db_tag.ja or tag_en)
-        sensitive = is_sensitive(tag_en)
         conn.execute(
-            "INSERT INTO tags (id, name, category_id, is_sensitive, is_favorite, disable, created_at) VALUES (?, ?, ?, ?, 0, 0, ?) "
-            "ON CONFLICT(id) DO UPDATE SET name = excluded.name, category_id = excluded.category_id, is_sensitive = excluded.is_sensitive",
-            (tag_en, tag_ja, category_id, sensitive, now),
+            "INSERT INTO tags (id, name, category_id, is_favorite, disable, created_at) VALUES (?, ?, ?, 0, 0, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name = excluded.name, category_id = excluded.category_id",
+            (tag_en, tag_ja, category_id, now),
         )
         tag_count += 1
         seen_tag_ids.add(tag_en)
@@ -416,11 +413,10 @@ def sync_master_data(
     # 3b. translation_cache（danbooru にないもの）
     for tag_en, tag_ja in trans_cache.items():
         if tag_en not in seen_tag_ids:
-            sensitive = is_sensitive(tag_en)
             conn.execute(
-                "INSERT INTO tags (id, name, is_sensitive, is_favorite, disable, created_at) VALUES (?, ?, ?, 0, 0, ?) "
-                "ON CONFLICT(id) DO UPDATE SET name = excluded.name, is_sensitive = excluded.is_sensitive",
-                (tag_en, _resolve_name(tag_en, tag_ja), sensitive, now),
+                "INSERT INTO tags (id, name, is_favorite, disable, created_at) VALUES (?, ?, 0, 0, ?) "
+                "ON CONFLICT(id) DO UPDATE SET name = excluded.name",
+                (tag_en, _resolve_name(tag_en, tag_ja), now),
             )
             tag_count += 1
             seen_tag_ids.add(tag_en)
@@ -429,9 +425,9 @@ def sync_master_data(
     for tag_en in entry_tags:
         if tag_en not in seen_tag_ids:
             conn.execute(
-                "INSERT INTO tags (id, name, is_sensitive, is_favorite, disable, created_at) VALUES (?, ?, ?, 0, 0, ?) "
+                "INSERT INTO tags (id, name, is_favorite, disable, created_at) VALUES (?, ?, 0, 0, ?) "
                 "ON CONFLICT(id) DO NOTHING",
-                (tag_en, _resolve_name(tag_en, tag_en), is_sensitive(tag_en), now),
+                (tag_en, _resolve_name(tag_en, tag_en), now),
             )
             tag_count += 1
             seen_tag_ids.add(tag_en)

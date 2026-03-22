@@ -17,7 +17,7 @@ from tag_palette import (
     generate_tags_batch,
     get_tag_category,
     get_translation_for_tag,
-    is_sensitive,
+    is_sensitive_by_ratings,
 )
 
 SAMPLES_DIR = Path(__file__).parent
@@ -37,14 +37,21 @@ def print_result(result, image_name: str = "") -> None:
         print(f"{'=' * 60}")
 
     print(f"\n  Model: {result.model_name}")
+
+    # WD14 rating 表示
+    if result.ratings:
+        sensitive = is_sensitive_by_ratings(result.ratings)
+        label = "SENSITIVE" if sensitive else "SAFE"
+        ratings_str = ", ".join(f"{k}={v:.3f}" for k, v in result.ratings.items())
+        print(f"  Rating: [{label}] ({ratings_str})")
+
     print(f"  Tags ({len(result.tags)}):")
 
     for tag, confidence in result.tags.items():
         category = get_tag_category(tag)
-        sensitive = " [SENSITIVE]" if is_sensitive(tag) else ""
         translation = get_translation_for_tag(tag)
         ja = f" ({translation})" if translation else ""
-        print(f"    {confidence:.3f}  {tag}{ja}  [{category}]{sensitive}")
+        print(f"    {confidence:.3f}  {tag}{ja}  [{category}]")
 
 
 def run_sequential(images: list[Path], args: argparse.Namespace) -> None:

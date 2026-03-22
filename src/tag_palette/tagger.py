@@ -18,10 +18,12 @@ class TagResult:
     Attributes:
         model_name: 使用したモデル名
         tags: タグ名と信頼度のマッピング
+        ratings: WD14 rating カテゴリと信頼度 (general, sensitive, questionable, explicit)
     """
 
     model_name: str
     tags: dict[str, float]
+    ratings: dict[str, float] | None = None
 
 
 def _load_image(image_path: Path) -> Image.Image:
@@ -31,15 +33,15 @@ def _load_image(image_path: Path) -> Image.Image:
     return im
 
 
-def _image_interrogate(image_path: Path, model_name: str) -> dict[str, float]:
+def _image_interrogate(image_path: Path, model_name: str) -> tuple[dict[str, float], dict[str, float]]:
     from tag_palette._wd14tagger.interrogator.interrogator import AbsInterrogator
     from tag_palette._wd14tagger.interrogators import interrogators
 
     interrogator = interrogators[model_name]
     im = _load_image(image_path)
-    result = interrogator.interrogate(im)
+    ratings, tags = interrogator.interrogate(im)
     im.close()
-    return AbsInterrogator.postprocess_tags(result[1])
+    return AbsInterrogator.postprocess_tags(tags), ratings
 
 
 def generate_tags(
@@ -67,9 +69,9 @@ def generate_tags(
 
     for name in model_list:
         try:
-            tags = _image_interrogate(image_path, name)
+            tags, ratings = _image_interrogate(image_path, name)
             if tags:
-                results.append(TagResult(model_name=name, tags=tags))
+                results.append(TagResult(model_name=name, tags=tags, ratings=ratings or None))
         except Exception as e:
             logger.warning("Skipped model '%s' due to error: %s", name, e)
 
@@ -117,14 +119,14 @@ def generate_tags_batch(
             batch_results = interrogator.interrogate_batch(images)
             for ratings, tags in batch_results:
                 postprocessed = AbsInterrogator.postprocess_tags(tags)
-                results.append(TagResult(model_name=model_name, tags=postprocessed))
+                results.append(TagResult(model_name=model_name, tags=postprocessed, ratings=ratings or None))
         except Exception as e:
             logger.warning("Batch inference failed, falling back: %s", e)
             for img in images:
                 try:
-                    _, tags = interrogator.interrogate(img)
+                    ratings, tags = interrogator.interrogate(img)
                     postprocessed = AbsInterrogator.postprocess_tags(tags)
-                    results.append(TagResult(model_name=model_name, tags=postprocessed))
+                    results.append(TagResult(model_name=model_name, tags=postprocessed, ratings=ratings or None))
                 except Exception as e2:
                     logger.warning("Skipped image due to error: %s", e2)
                     results.append(TagResult(model_name=model_name, tags={}))

@@ -10,8 +10,10 @@ from tag_palette.embedding import (
 )
 from tag_palette.genre import get_genres
 from tag_palette.sensitive import (
-    is_sensitive,
-    load_sensitive_tags,
+    detect_sensitive,
+    get_anime_rating,
+    is_sensitive_by_anime_rating,
+    is_sensitive_by_ratings,
 )
 from tag_palette.tagger import TagResult, generate_tags, generate_tags_batch
 from tag_palette.translations import (
@@ -51,6 +53,8 @@ __all__ = [
     "load_tag_embeddings",
     "save_tag_embeddings",
     # Sensitive content
-    "is_sensitive",
-    "load_sensitive_tags",
+    "is_sensitive_by_ratings",
+    "is_sensitive_by_anime_rating",
+    "get_anime_rating",
+    "detect_sensitive",
 ]

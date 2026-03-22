@@ -1,25 +1,29 @@
-from tag_palette.sensitive import SENSITIVE_KEYWORDS, is_sensitive
+from tag_palette.sensitive import is_sensitive_by_ratings, detect_sensitive
 
 
-def test_is_sensitive_true():
-    assert is_sensitive("bondage") is True
-    assert is_sensitive("nipples") is True
+def test_is_sensitive_by_ratings_nsfw():
+    ratings = {"general": 0.1, "sensitive": 0.2, "questionable": 0.4, "explicit": 0.3}
+    assert is_sensitive_by_ratings(ratings) is True
 
 
-def test_is_sensitive_false():
-    assert is_sensitive("flower") is False
-    assert is_sensitive("1girl") is False
-    assert is_sensitive("blue_eyes") is False
+def test_is_sensitive_by_ratings_safe():
+    ratings = {"general": 0.8, "sensitive": 0.15, "questionable": 0.03, "explicit": 0.02}
+    assert is_sensitive_by_ratings(ratings) is False
 
 
-def test_is_sensitive_case_insensitive():
-    assert is_sensitive("BONDAGE") is True
-    assert is_sensitive("Bondage") is True
+def test_is_sensitive_by_ratings_none():
+    assert is_sensitive_by_ratings(None) is None
+    assert is_sensitive_by_ratings({}) is None
 
 
-def test_sensitive_keywords_is_frozenset():
-    assert isinstance(SENSITIVE_KEYWORDS, frozenset)
+def test_detect_sensitive_with_wd14():
+    ratings = {"general": 0.1, "sensitive": 0.2, "questionable": 0.4, "explicit": 0.3}
+    result = detect_sensitive(ratings=ratings)
+    assert result["is_sensitive"] is True
+    assert result["method"] == "wd14_rating"
 
 
-def test_sensitive_keywords_not_empty():
-    assert len(SENSITIVE_KEYWORDS) > 0
+def test_detect_sensitive_no_input():
+    result = detect_sensitive()
+    assert result["is_sensitive"] is False
+    assert result["method"] == "none"
