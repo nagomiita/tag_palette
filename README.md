@@ -175,26 +175,6 @@ uv run python main.py --image-dir /path/to/eagle.library/images --log-file outpu
 
 画像・GIF はサムネイルを PIL で生成、動画 (MP4 等) は ffmpeg で先頭フレームを抽出してサムネイルを生成し、そのサムネイルでタグ生成を行う。
 
-### cleanup_orphans.py — 孤立ディレクトリの退避
-
-オリジナルファイルが存在しない .info ディレクトリを検出し、退避先に移動する。
-
-```bash
-# dry-run で対象を確認 (移動はしない)
-uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images --dry-run
-
-# 実行 (デフォルト退避先: eagle.library/_orphans/)
-uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images
-
-# 退避先を指定
-uv run python cleanup_orphans.py --image-dir /path/to/eagle.library/images --dest /path/to/orphans
-```
-
-| 引数 | 必須 | デフォルト | 説明 |
-|------|------|-----------|------|
-| `--image-dir` | Yes | - | Eagle ライブラリの images ディレクトリ |
-| `--dest` | No | `eagle.library/_orphans` | 退避先ディレクトリ |
-| `--dry-run` | No | `false` | 対象を表示するのみ (移動しない) |
 
 ## 小説テキスト処理 (`tag_palette.novel`)
 
@@ -251,7 +231,6 @@ winget install ffmpeg
 
 # 実行
 uv run python main.py --image-dir "D:\eagle.library\images"
-uv run python cleanup_orphans.py --image-dir "D:\eagle.library\images" --dry-run
 ```
 
 ## パッケージデータ
