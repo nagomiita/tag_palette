@@ -1,14 +1,17 @@
-"""タスクスケジューラから呼び出す画像タグ生成スクリプト。
+"""タスクスケジューラから呼び出すメディアタグ生成スクリプト。
 
 Eagle ライブラリの images ディレクトリをスキャンし、前回実行以降に追加された
-画像に対してタグを生成し、Eagle の metadata.json に書き戻す。
+画像・音声に対してタグを生成し、Eagle の metadata.json に書き戻す。
+
+- 画像: WD14 Tagger でタグ生成
+- 音声: PANNs で分類タグ生成 (Voice は Whisper で文字起こし)
 
 前回実行時刻は状態ファイル (.last_run) に記録され、次回実行時に
 それ以降に更新されたファイルのみを対象とする。
 
 Usage:
     uv run python main.py --image-dir /path/to/eagle.library/images
-    uv run python main.py --image-dir /path/to/eagle.library/images --model wd-eva02-large-tagger-v3
+    uv run python main.py --image-dir /path/to/eagle.library/images --model EVA02_Large
     uv run python main.py --image-dir /path/to/eagle.library/images --force
 """
 
@@ -35,6 +38,12 @@ from tag_palette import (
     save_translation_cache,
     tags_to_embedding,
     translate_tags,
+)
+from tag_palette.audio_labels_ja import get_japanese_description
+from tag_palette.audio_tagger import (
+    AudioTagResult,
+    detect_type_from_path,
+    generate_audio_tags,
 )
 from tag_palette.sensitive import detect_sensitive
 from tag_palette._csv_reader import load_clean_tag_csv
@@ -72,6 +81,7 @@ def get_genre_ja(genre_key: str) -> str:
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus"}
 THUMBNAIL_SIZE = (300, 300)
 STATE_FILE = Path("last_run.txt")
 SAVE_INTERVAL = 100
@@ -250,6 +260,11 @@ def is_image_file(eagle_image: EagleImage) -> bool:
     return f".{eagle_image.ext}".lower() in IMAGE_EXTENSIONS
 
 
+def is_eagle_audio_file(eagle_image: EagleImage) -> bool:
+    """音声ファイルかどうかを判定する。"""
+    return f".{eagle_image.ext}".lower() in AUDIO_EXTENSIONS
+
+
 def ensure_thumbnail(eagle_image: EagleImage) -> None:
     """サムネイルが存在しなければ生成する。画像は PIL、動画は ffmpeg を使用。"""
     if eagle_image.thumbnail_path.exists():
@@ -393,6 +408,64 @@ def write_tags_to_eagle(
         logger.error("tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
 
 
+# ── 音声タグの Eagle 書き戻し ─────────────────────────────
+
+
+def write_audio_tags_to_eagle(
+    eagle_image: EagleImage,
+    result: AudioTagResult,
+) -> None:
+    """音声タグ結果を Eagle の metadata.json と tag_palette.json に保存する。"""
+    # 日本語説明を生成
+    desc_ja = get_japanese_description(
+        result.tags, result.audio_type.value, result.transcript,
+    )
+
+    # Eagle metadata.json に annotation 書き込み
+    try:
+        with open(eagle_image.metadata_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+        meta["annotation"] = desc_ja
+
+        # audio_type を Eagle の tags に追加
+        eagle_tags: list[str] = meta.get("tags", [])
+        type_label = result.audio_type.value.upper()
+        if type_label not in eagle_tags:
+            eagle_tags.append(type_label)
+            meta["tags"] = eagle_tags
+
+        with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+    except Exception as e:
+        logger.error("metadata.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
+
+    # tag_palette.json に保存 (audio_assets テーブルに対応)
+    try:
+        tp_path = eagle_image.info_dir / "tag_palette.json"
+        file_size = eagle_image.image_path.stat().st_size if eagle_image.image_path.exists() else None
+        tp_data = {
+            "id": eagle_image.eagle_id,
+            "file_path": str(eagle_image.image_path),
+            "file_name": eagle_image.image_path.name,
+            "file_extension": eagle_image.ext,
+            "media_type": "audio",
+            "audio_type": result.audio_type.value,
+            "duration_ms": result.duration_ms,
+            "sample_rate": result.sample_rate,
+            "file_size": file_size,
+            "description": desc_ja,
+            "transcript": result.transcript,
+            "model_name": result.model_name,
+            "tags": result.tags,
+            "generated_at": datetime.now().isoformat(),
+        }
+        with open(tp_path, "w", encoding="utf-8") as f:
+            json.dump(tp_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error("tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
+
+
 # ── メイン ──────────────────────────────────────────────
 
 
@@ -410,7 +483,7 @@ def main() -> None:
     )
     parser.add_argument("--log-file", type=Path, default=None, help="ログファイルパス")
     parser.add_argument(
-        "--model", default="wd-eva02-large-tagger-v3", help="使用するモデル名"
+        "--model", default="EVA02_Large", help="使用するモデル名"
     )
     parser.add_argument(
         "--force",
@@ -462,34 +535,55 @@ def main() -> None:
 
     for i, eagle_image in enumerate(images, 1):
         logger.info("(%d/%d) %s", i, len(images), eagle_image.image_path.name)
-        convert_heic_to_webp(eagle_image)
-        ensure_thumbnail(eagle_image)
 
-        # サムネイルが無ければスキップ
-        if not eagle_image.thumbnail_path.exists():
-            logger.warning(
-                "サムネイルが見つかりません (スキップ): %s", eagle_image.eagle_id
-            )
-            continue
-
-        try:
-            tag_results = generate_tags(
-                eagle_image.thumbnail_path, model_name=args.model
-            )
-            if tag_results:
-                write_tags_to_eagle(
-                    eagle_image,
-                    tag_results[0].tags,
-                    tag_results[0].model_name,
-                    ratings=tag_results[0].ratings,
+        if is_eagle_audio_file(eagle_image):
+            # ── 音声処理 ──
+            try:
+                audio_type_override = detect_type_from_path(eagle_image.image_path)
+                audio_result = generate_audio_tags(
+                    eagle_image.image_path,
+                    audio_type_override=audio_type_override,
                 )
+                write_audio_tags_to_eagle(eagle_image, audio_result)
                 processed += 1
-                if processed % SAVE_INTERVAL == 0:
-                    save_translation_cache()
-                    save_tag_embeddings()
-                    logger.info("キャッシュ保存 (%d件処理済み)", processed)
-        except Exception as e:
-            logger.error("Failed: %s -> %s", eagle_image.eagle_id, e)
+                logger.info(
+                    "  Audio: %s (%s, %dms)",
+                    audio_result.audio_type.value,
+                    audio_result.model_name,
+                    audio_result.duration_ms or 0,
+                )
+            except Exception as e:
+                logger.error("Failed (audio): %s -> %s", eagle_image.eagle_id, e)
+        else:
+            # ── 画像/動画処理 ──
+            convert_heic_to_webp(eagle_image)
+            ensure_thumbnail(eagle_image)
+
+            # サムネイルが無ければスキップ
+            if not eagle_image.thumbnail_path.exists():
+                logger.warning(
+                    "サムネイルが見つかりません (スキップ): %s", eagle_image.eagle_id
+                )
+                continue
+
+            try:
+                tag_results = generate_tags(
+                    eagle_image.thumbnail_path, model_name=args.model
+                )
+                if tag_results:
+                    write_tags_to_eagle(
+                        eagle_image,
+                        tag_results[0].tags,
+                        tag_results[0].model_name,
+                        ratings=tag_results[0].ratings,
+                    )
+                    processed += 1
+                    if processed % SAVE_INTERVAL == 0:
+                        save_translation_cache()
+                        save_tag_embeddings()
+                        logger.info("キャッシュ保存 (%d件処理済み)", processed)
+            except Exception as e:
+                logger.error("Failed: %s -> %s", eagle_image.eagle_id, e)
 
     elapsed = time.perf_counter() - start
     logger.info(
