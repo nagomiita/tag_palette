@@ -46,7 +46,7 @@ BATCH_SIZE = 500
 
 @dataclass
 class TagPaletteEntry:
-    """tag_palette.json 1件分。"""
+    """tag_palette.json 1件分 (画像/動画)。"""
 
     image_id: str
     image_name: str
@@ -56,12 +56,37 @@ class TagPaletteEntry:
     genre: str | None
     is_sensitive: bool
     ai_score: float | None
+    real_score: float | None
+    monochrome_score: float | None
+    classify_scores: dict[str, float] | None
+    completeness_scores: dict[str, float] | None
+    portrait_scores: dict[str, float] | None
     tags: dict[str, float]  # {英語タグ: confidence}
     tags_ja: dict[str, str]  # {英語タグ: 日本語名}
     generated_at: str
     info_dir: Path
     tag_embedding: bytes | None  # embedding.npy から読み込んだ生バイト
     ccip_embedding: bytes | None  # ccip_embedding.npy から読み込んだ生バイト
+    pose_embedding: bytes | None  # pose_embedding.npy から読み込んだ生バイト
+
+
+@dataclass
+class AudioPaletteEntry:
+    """tag_palette.json 1件分 (音声)。"""
+
+    asset_id: str
+    file_path: str
+    file_name: str
+    file_extension: str
+    audio_type: str  # "bgm", "se", "voice"
+    duration_ms: int | None
+    sample_rate: int | None
+    file_size: int | None
+    description: str | None
+    transcript: str | None
+    model_name: str
+    tags: dict[str, float]
+    generated_at: str
 
 
 @dataclass
@@ -232,10 +257,15 @@ def save_last_import(image_dir: Path, run_time: datetime) -> None:
 
 def load_tag_palettes(
     image_dir: Path, *, since: datetime | None = None
-) -> list[TagPaletteEntry]:
-    """images ディレクトリから tag_palette.json を読み込む。"""
+) -> tuple[list[TagPaletteEntry], list[AudioPaletteEntry]]:
+    """images ディレクトリから tag_palette.json を読み込む。
+
+    Returns:
+        (media_entries, audio_entries) のタプル。
+    """
     cutoff = since.timestamp() if since else 0
     entries: list[TagPaletteEntry] = []
+    audio_entries: list[AudioPaletteEntry] = []
 
     scanned = 0
     skipped = 0
@@ -245,7 +275,7 @@ def load_tag_palettes(
 
         scanned += 1
         if scanned % 5000 == 0:
-            logger.info("スキャン中... %d ディレクトリ (読み込み: %d, スキップ: %d)", scanned, len(entries), skipped)
+            logger.info("スキャン中... %d ディレクトリ (読み込み: %d media, %d audio, スキップ: %d)", scanned, len(entries), len(audio_entries), skipped)
 
         tp_path = info_dir / "tag_palette.json"
         if not tp_path.exists():
@@ -260,6 +290,28 @@ def load_tag_palettes(
                 data = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("読み込み失敗: %s -> %s", tp_path, e)
+            continue
+
+        # 音声エントリの場合
+        if data.get("media_type") == "audio":
+            asset_id = data.get("id", info_dir.name.replace(".info", ""))
+            audio_entries.append(
+                AudioPaletteEntry(
+                    asset_id=asset_id,
+                    file_path=data.get("file_path", ""),
+                    file_name=data.get("file_name", ""),
+                    file_extension=data.get("file_extension", ""),
+                    audio_type=data.get("audio_type", "bgm"),
+                    duration_ms=data.get("duration_ms"),
+                    sample_rate=data.get("sample_rate"),
+                    file_size=data.get("file_size"),
+                    description=data.get("description"),
+                    transcript=data.get("transcript"),
+                    model_name=data.get("model_name", ""),
+                    tags=data.get("tags", {}),
+                    generated_at=data.get("generated_at", ""),
+                )
+            )
             continue
 
         image_id = data.get("image_id") or data.get(
@@ -286,6 +338,16 @@ def load_tag_palettes(
             except Exception as e:
                 logger.warning("ccip_embedding.npy 読み込み失敗: %s -> %s", ccip_path, e)
 
+        # pose_embedding.npy を読み込み
+        pose_embedding: bytes | None = None
+        pose_path = info_dir / "pose_embedding.npy"
+        if pose_path.exists():
+            try:
+                arr = np.load(pose_path)
+                pose_embedding = arr.astype(np.float32).tobytes()
+            except Exception as e:
+                logger.warning("pose_embedding.npy 読み込み失敗: %s -> %s", pose_path, e)
+
         entries.append(
             TagPaletteEntry(
                 image_id=image_id,
@@ -296,17 +358,23 @@ def load_tag_palettes(
                 genre=data.get("genre"),
                 is_sensitive=bool(data.get("is_sensitive", False)),
                 ai_score=data.get("ai_score"),
+                real_score=data.get("real_score"),
+                monochrome_score=data.get("monochrome_score"),
+                classify_scores=data.get("classify_scores"),
+                completeness_scores=data.get("completeness_scores"),
+                portrait_scores=data.get("portrait_scores"),
                 tags=data.get("tags", {}),
                 tags_ja=data.get("tags_ja", {}),
                 generated_at=data.get("generated_at", ""),
                 info_dir=info_dir,
                 tag_embedding=tag_embedding,
                 ccip_embedding=ccip_embedding,
+                pose_embedding=pose_embedding,
             )
         )
 
-    logger.info("スキャン完了: %d ディレクトリ (読み込み: %d, スキップ: %d)", scanned, len(entries), skipped)
-    return entries
+    logger.info("スキャン完了: %d ディレクトリ (media: %d, audio: %d, スキップ: %d)", scanned, len(entries), len(audio_entries), skipped)
+    return entries, audio_entries
 
 
 # ---------------------------------------------------------------------------
@@ -494,20 +562,52 @@ def import_entries(
         media_type = _detect_media_type(entry.ext, entry.tags)
 
         # ── 1. Media UPSERT ───────────────────────────────
+        classify_json = json.dumps(entry.classify_scores) if entry.classify_scores else None
+        completeness_json = json.dumps(entry.completeness_scores) if entry.completeness_scores else None
+        portrait_json = json.dumps(entry.portrait_scores) if entry.portrait_scores else None
+
         if media_id in existing_media:
             if entry.ai_score is not None:
                 conn.execute(
                     "UPDATE media SET ai_score = ? WHERE id = ? AND ai_score IS NULL",
                     (entry.ai_score, media_id),
                 )
+            if entry.real_score is not None:
+                conn.execute(
+                    "UPDATE media SET real_score = ? WHERE id = ? AND real_score IS NULL",
+                    (entry.real_score, media_id),
+                )
+            if entry.monochrome_score is not None:
+                conn.execute(
+                    "UPDATE media SET monochrome_score = ? WHERE id = ? AND monochrome_score IS NULL",
+                    (entry.monochrome_score, media_id),
+                )
+            if classify_json is not None:
+                conn.execute(
+                    "UPDATE media SET classify_scores = ? WHERE id = ? AND classify_scores IS NULL",
+                    (classify_json, media_id),
+                )
+            if completeness_json is not None:
+                conn.execute(
+                    "UPDATE media SET completeness_scores = ? WHERE id = ? AND completeness_scores IS NULL",
+                    (completeness_json, media_id),
+                )
+            if portrait_json is not None:
+                conn.execute(
+                    "UPDATE media SET portrait_scores = ? WHERE id = ? AND portrait_scores IS NULL",
+                    (portrait_json, media_id),
+                )
                 stats["media_updated"] += 1
         else:
             conn.execute(
                 "INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path, "
-                "is_sensitive, ai_score, media_type, genre_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "is_sensitive, ai_score, real_score, monochrome_score, classify_scores, completeness_scores, "
+                "portrait_scores, media_type, genre_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 entry.is_sensitive, entry.ai_score, media_type, entry.genre, now),
+                 entry.is_sensitive, entry.ai_score, entry.real_score,
+                 entry.monochrome_score, classify_json, completeness_json, portrait_json,
+                 media_type, entry.genre, now),
             )
             existing_media.add(media_id)
             stats["media_created"] += 1
@@ -532,7 +632,7 @@ def import_entries(
             stats["media_tags_created"] += 1
 
         # ── 3. MediaEmbedding UPSERT ──────────────────────
-        if entry.tag_embedding or entry.ccip_embedding:
+        if entry.tag_embedding or entry.ccip_embedding or entry.pose_embedding:
             if media_id in existing_emb:
                 if entry.tag_embedding:
                     conn.execute(
@@ -544,16 +644,69 @@ def import_entries(
                         "UPDATE media_embeddings SET ccip_embedding = ? WHERE media_id = ? AND ccip_embedding IS NULL",
                         (entry.ccip_embedding, media_id),
                     )
+                if entry.pose_embedding:
+                    conn.execute(
+                        "UPDATE media_embeddings SET pose_embedding = ? WHERE media_id = ? AND pose_embedding IS NULL",
+                        (entry.pose_embedding, media_id),
+                    )
             else:
                 conn.execute(
-                    "INSERT INTO media_embeddings (media_id, tag_embedding, ccip_embedding) VALUES (?, ?, ?)",
-                    (media_id, entry.tag_embedding, entry.ccip_embedding),
+                    "INSERT INTO media_embeddings (media_id, tag_embedding, ccip_embedding, pose_embedding) VALUES (?, ?, ?, ?)",
+                    (media_id, entry.tag_embedding, entry.ccip_embedding, entry.pose_embedding),
                 )
                 existing_emb.add(media_id)
 
         if (i + 1) % 1000 == 0:
             conn.commit()
             logger.info("エントリインポート: %d / %d 件", i + 1, len(entries))
+
+    conn.commit()
+    return stats
+
+
+def import_audio_entries(
+    conn: sqlite3.Connection,
+    entries: list[AudioPaletteEntry],
+) -> dict[str, int]:
+    """音声エントリを audio_assets テーブルに書き込む。"""
+    now = _now_iso()
+    stats = {"audio_created": 0, "audio_updated": 0}
+
+    # 既存 audio_assets を file_path で一括取得
+    existing_audio: set[str] = set()
+    all_paths = [e.file_path for e in entries]
+    for batch in _chunked(all_paths, BATCH_SIZE):
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            f"SELECT file_path FROM audio_assets WHERE file_path IN ({placeholders})", batch
+        ).fetchall()
+        existing_audio.update(r[0] for r in rows)
+
+    for i, entry in enumerate(entries):
+        if entry.file_path in existing_audio:
+            # UPDATE: audio_type, duration, sample_rate, description
+            conn.execute(
+                "UPDATE audio_assets SET audio_type = ?, duration_ms = ?, sample_rate = ?, "
+                "description = ?, file_size = ? WHERE file_path = ?",
+                (entry.audio_type.upper(), entry.duration_ms, entry.sample_rate,
+                 entry.description, entry.file_size, entry.file_path),
+            )
+            stats["audio_updated"] += 1
+        else:
+            conn.execute(
+                "INSERT INTO audio_assets (id, file_path, file_name, file_extension, "
+                "audio_type, duration_ms, sample_rate, description, file_size, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (entry.asset_id, entry.file_path, entry.file_name, entry.file_extension,
+                 entry.audio_type.upper(), entry.duration_ms, entry.sample_rate,
+                 entry.description, entry.file_size, now),
+            )
+            existing_audio.add(entry.file_path)
+            stats["audio_created"] += 1
+
+        if (i + 1) % 1000 == 0:
+            conn.commit()
+            logger.info("音声インポート: %d / %d 件", i + 1, len(entries))
 
     conn.commit()
     return stats
@@ -748,25 +901,32 @@ def main() -> None:
     category_rules = load_category_rules()
 
     # tag_palette.json 読み込み
-    entries = load_tag_palettes(args.image_dir, since=since)
-    if not entries:
+    entries, audio_entries = load_tag_palettes(args.image_dir, since=since)
+    if not entries and not audio_entries:
         logger.info("対象の tag_palette.json がありません。")
         save_last_import(args.image_dir, run_time)
         return
 
     if args.dry_run:
-        logger.info("dry-run: %d 件読み込み済み。書き込みスキップ。", len(entries))
+        logger.info("dry-run: media %d 件, audio %d 件。書き込みスキップ。", len(entries), len(audio_entries))
         for e in entries[:3]:
             if e.tags:
                 sample_tag = next(iter(e.tags))
                 sample_ja = e.tags_ja.get(sample_tag, sample_tag)
                 logger.info(
-                    "  %s: %d tags, sample: %s → %s",
+                    "  [media] %s: %d tags, sample: %s → %s",
                     e.image_name,
                     len(e.tags),
                     sample_tag,
                     sample_ja,
                 )
+        for a in audio_entries[:3]:
+            logger.info(
+                "  [audio] %s: %s, %dms",
+                a.file_name,
+                a.audio_type,
+                a.duration_ms or 0,
+            )
         return
 
     # 全エントリのタグ名を収集
@@ -783,20 +943,29 @@ def main() -> None:
         logger.info("DB: %s", args.db_path)
 
         # 1. マスタデータ同期
-        sync_master_data(
-            conn, danbooru, genre_csv, category_csv, trans_cache,
-            all_entry_tags, category_rules,
-        )
+        if entries:
+            sync_master_data(
+                conn, danbooru, genre_csv, category_csv, trans_cache,
+                all_entry_tags, category_rules,
+            )
 
-        # 2. エントリインポート
-        stats = import_entries(conn, entries)
+        # 2. メディアエントリインポート
+        if entries:
+            stats = import_entries(conn, entries)
+            logger.info("メディアインポート完了:")
+            for key, val in stats.items():
+                if val:
+                    logger.info("  %s: %d", key, val)
 
-        logger.info("インポート完了:")
-        for key, val in stats.items():
-            if val:
-                logger.info("  %s: %d", key, val)
+        # 3. 音声エントリインポート
+        if audio_entries:
+            audio_stats = import_audio_entries(conn, audio_entries)
+            logger.info("音声インポート完了:")
+            for key, val in audio_stats.items():
+                if val:
+                    logger.info("  %s: %d", key, val)
 
-        # 3. desc_text + desc_embedding 補完（オプション）
+        # 4. desc_text + desc_embedding 補完（オプション）
         try:
             post_import_desc(conn)
         except ImportError as e:

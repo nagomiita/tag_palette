@@ -39,12 +39,6 @@ from tag_palette import (
     tags_to_embedding,
     translate_tags,
 )
-from tag_palette.audio_labels_ja import get_japanese_description
-from tag_palette.audio_tagger import (
-    AudioTagResult,
-    detect_type_from_path,
-    generate_audio_tags,
-)
 from tag_palette.sensitive import detect_sensitive
 from tag_palette._csv_reader import load_clean_tag_csv
 from tag_palette.genre import _get_genre_df
@@ -82,6 +76,7 @@ def get_genre_ja(genre_key: str) -> str:
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus"}
+NOVEL_EXTENSIONS = {".txt", ".pdf"}
 THUMBNAIL_SIZE = (300, 300)
 STATE_FILE = Path("last_run.txt")
 SAVE_INTERVAL = 100
@@ -265,6 +260,11 @@ def is_eagle_audio_file(eagle_image: EagleImage) -> bool:
     return f".{eagle_image.ext}".lower() in AUDIO_EXTENSIONS
 
 
+def is_eagle_novel_file(eagle_image: EagleImage) -> bool:
+    """小説ファイルかどうかを判定する。"""
+    return f".{eagle_image.ext}".lower() in NOVEL_EXTENSIONS
+
+
 def ensure_thumbnail(eagle_image: EagleImage) -> None:
     """サムネイルが存在しなければ生成する。画像は PIL、動画は ffmpeg を使用。"""
     if eagle_image.thumbnail_path.exists():
@@ -360,16 +360,67 @@ def write_tags_to_eagle(
             except Exception as e:
                 logger.warning("CCIP 抽出失敗: %s -> %s", eagle_image.eagle_id, e)
 
-    # AI 生成スコア判定
-    ai_score: float | None = None
+    # ポーズ埋め込みベクトル生成 → .npy 保存
     if is_image_file(eagle_image):
+        pose_path = eagle_image.info_dir / "pose_embedding.npy"
+        if not pose_path.exists():
+            try:
+                from tag_palette.pose_embedding import extract_pose_embedding
+
+                target = eagle_image.thumbnail_path if eagle_image.thumbnail_path.exists() else eagle_image.image_path
+                pose_vec = extract_pose_embedding(str(target))
+                if pose_vec is not None:
+                    np.save(pose_path, pose_vec)
+            except Exception as e:
+                logger.warning("ポーズ抽出失敗: %s -> %s", eagle_image.eagle_id, e)
+
+    # 画像分類スコア判定
+    ai_score: float | None = None
+    real_score: float | None = None
+    monochrome_score: float | None = None
+    classify_scores: dict[str, float] | None = None
+    completeness_scores: dict[str, float] | None = None
+    portrait_scores: dict[str, float] | None = None
+    if is_image_file(eagle_image):
+        target = eagle_image.thumbnail_path if eagle_image.thumbnail_path.exists() else eagle_image.image_path
+        target_str = str(target)
+
         try:
             from imgutils.validate import get_ai_created_score
-
-            target = eagle_image.thumbnail_path if eagle_image.thumbnail_path.exists() else eagle_image.image_path
-            ai_score = get_ai_created_score(str(target))
+            ai_score = get_ai_created_score(target_str)
         except Exception as e:
             logger.warning("AI 判定失敗: %s -> %s", eagle_image.eagle_id, e)
+
+        try:
+            from imgutils.validate import anime_real_score
+            scores = anime_real_score(target_str)
+            real_score = scores.get("real")
+        except Exception as e:
+            logger.warning("実写判定失敗: %s -> %s", eagle_image.eagle_id, e)
+
+        try:
+            from imgutils.validate import get_monochrome_score
+            monochrome_score = get_monochrome_score(target_str)
+        except Exception as e:
+            logger.warning("モノクロ判定失敗: %s -> %s", eagle_image.eagle_id, e)
+
+        try:
+            from imgutils.validate import anime_classify_score
+            classify_scores = anime_classify_score(target_str)
+        except Exception as e:
+            logger.warning("分類判定失敗: %s -> %s", eagle_image.eagle_id, e)
+
+        try:
+            from imgutils.validate import anime_completeness_score
+            completeness_scores = anime_completeness_score(target_str)
+        except Exception as e:
+            logger.warning("完成度判定失敗: %s -> %s", eagle_image.eagle_id, e)
+
+        try:
+            from imgutils.validate import anime_portrait_score
+            portrait_scores = anime_portrait_score(target_str)
+        except Exception as e:
+            logger.warning("構図判定失敗: %s -> %s", eagle_image.eagle_id, e)
 
     # tag_palette.json にタグ生データ保存
     try:
@@ -397,6 +448,11 @@ def write_tags_to_eagle(
             "wd14_ratings": sensitive_result["wd14_ratings"],
             "anime_rating": sensitive_result["anime_rating"],
             "ai_score": ai_score,
+            "real_score": real_score,
+            "monochrome_score": monochrome_score,
+            "classify_scores": classify_scores,
+            "completeness_scores": completeness_scores,
+            "portrait_scores": portrait_scores,
             "model_name": model_name,
             "tags": tags,
             "tags_ja": dict(zip(tag_names, ja_tags)),
@@ -413,9 +469,11 @@ def write_tags_to_eagle(
 
 def write_audio_tags_to_eagle(
     eagle_image: EagleImage,
-    result: AudioTagResult,
+    result,
 ) -> None:
     """音声タグ結果を Eagle の metadata.json と tag_palette.json に保存する。"""
+    from tag_palette.audio_labels_ja import get_japanese_description
+
     # 日本語説明を生成
     desc_ja = get_japanese_description(
         result.tags, result.audio_type.value, result.transcript,
@@ -464,6 +522,137 @@ def write_audio_tags_to_eagle(
             json.dump(tp_data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error("tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
+
+
+# ── 小説の解析・Eagle 書き戻し ────────────────────────────
+
+
+def _parse_novel(eagle_image: EagleImage) -> dict:
+    """小説ファイルを解析してメタデータを返す。"""
+    ext = eagle_image.ext.lower()
+    file_path = eagle_image.image_path
+
+    if ext == "pdf":
+        from tag_palette.novel.pdf_parser import parse_pdf
+        novel = parse_pdf(file_path)
+        return {
+            "novel_id": novel.n_code,
+            "title": novel.title,
+            "author": novel.author,
+            "url": novel.url,
+            "tags": novel.tags,
+            "body": novel.body,
+            "is_sensitive": novel.is_sensitive,
+        }
+
+    # .txt (Pixiv / Fanbox format)
+    text = file_path.read_text(encoding="utf-8")
+    lines = text.split("\n")
+
+    url = lines[0].strip() if len(lines) > 0 else ""
+    author = lines[2].strip() if len(lines) > 2 else ""
+    title = eagle_image.name
+    tag_line = lines[6].strip() if len(lines) > 6 else ""
+
+    tags: list[str] = []
+    if tag_line.startswith("Tags:"):
+        tags = [t.strip() for t in tag_line[5:].split(",") if t.strip()]
+        body = "\n".join(lines[8:])
+    else:
+        body = "\n".join(lines[6:])
+
+    sensitive_tags = {"18禁", "R-18", "R18"}
+    is_sensitive = any(t.strip() in sensitive_tags for t in tags)
+
+    return {
+        "novel_id": eagle_image.eagle_id,
+        "title": title,
+        "author": author,
+        "url": url,
+        "tags": tags,
+        "body": body,
+        "is_sensitive": is_sensitive,
+    }
+
+
+def write_novel_to_eagle(eagle_image: EagleImage) -> dict:
+    """小説ファイルを解析し、tag_palette.json に保存する。
+
+    Returns:
+        解析結果の概要。
+    """
+    data = _parse_novel(eagle_image)
+
+    # チャンク分割
+    from tag_palette.novel.chunker import chunk_text
+    chunks = chunk_text(data["body"])
+
+    # 形態素解析
+    from tag_palette.novel.morpheme import extract_morphemes
+    morpheme_summary: dict[str, int] = {}
+    for chunk in chunks:
+        for (surface, _pos), count in extract_morphemes(chunk.body).items():
+            morpheme_summary[surface] = morpheme_summary.get(surface, 0) + count
+
+    # Eagle metadata.json に annotation 書き込み
+    try:
+        with open(eagle_image.metadata_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+        # タイトルと作者を annotation に
+        annotation_parts = [data["title"]]
+        if data["author"]:
+            annotation_parts.append(data["author"])
+        if data["tags"]:
+            annotation_parts.append(", ".join(data["tags"][:5]))
+        meta["annotation"] = " / ".join(annotation_parts)
+
+        # タグを Eagle tags に追加
+        eagle_tags: list[str] = meta.get("tags", [])
+        for tag in data["tags"]:
+            if tag not in eagle_tags:
+                eagle_tags.append(tag)
+        if "小説" not in eagle_tags:
+            eagle_tags.append("小説")
+        meta["tags"] = eagle_tags
+
+        with open(eagle_image.metadata_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+    except Exception as e:
+        logger.error("metadata.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
+
+    # tag_palette.json に保存
+    try:
+        tp_path = eagle_image.info_dir / "tag_palette.json"
+        tp_data = {
+            "id": data["novel_id"],
+            "media_type": "novel",
+            "title": data["title"],
+            "author": data["author"],
+            "url": data["url"],
+            "tags": data["tags"],
+            "is_sensitive": data["is_sensitive"],
+            "num_chunks": len(chunks),
+            "num_morphemes": len(morpheme_summary),
+            "chunks": [
+                {"seq": c.seq, "kind": c.kind, "body": c.body}
+                for c in chunks
+            ],
+            "morphemes": morpheme_summary,
+            "generated_at": datetime.now().isoformat(),
+        }
+        with open(tp_path, "w", encoding="utf-8") as f:
+            json.dump(tp_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error("tag_palette.json 書き込み失敗: %s -> %s", eagle_image.eagle_id, e)
+
+    return {
+        "title": data["title"],
+        "author": data["author"],
+        "num_chunks": len(chunks),
+        "num_morphemes": len(morpheme_summary),
+        "num_tags": len(data["tags"]),
+    }
 
 
 # ── メイン ──────────────────────────────────────────────
@@ -539,6 +728,8 @@ def main() -> None:
         if is_eagle_audio_file(eagle_image):
             # ── 音声処理 ──
             try:
+                from tag_palette.audio_tagger import detect_type_from_path, generate_audio_tags
+
                 audio_type_override = detect_type_from_path(eagle_image.image_path)
                 audio_result = generate_audio_tags(
                     eagle_image.image_path,
@@ -554,6 +745,20 @@ def main() -> None:
                 )
             except Exception as e:
                 logger.error("Failed (audio): %s -> %s", eagle_image.eagle_id, e)
+        elif is_eagle_novel_file(eagle_image):
+            # ── 小説処理 ──
+            try:
+                novel_info = write_novel_to_eagle(eagle_image)
+                processed += 1
+                logger.info(
+                    "  Novel: %s (%s, %d chunks, %d morphemes)",
+                    novel_info["title"],
+                    novel_info["author"],
+                    novel_info["num_chunks"],
+                    novel_info["num_morphemes"],
+                )
+            except Exception as e:
+                logger.error("Failed (novel): %s -> %s", eagle_image.eagle_id, e)
         else:
             # ── 画像/動画処理 ──
             convert_heic_to_webp(eagle_image)
