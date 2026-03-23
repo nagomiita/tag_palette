@@ -1,4 +1,4 @@
-from tag_palette.categorize import CATEGORY_ID_TO_NAME
+from tag_palette.media.categorize import CATEGORY_ID_TO_NAME
 
 
 def test_category_id_to_name_mapping():

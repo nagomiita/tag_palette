@@ -1,4 +1,4 @@
-from tag_palette.sensitive import is_sensitive_by_ratings, detect_sensitive
+from tag_palette.media.sensitive import is_sensitive_by_ratings, detect_sensitive
 
 
 def test_is_sensitive_by_ratings_nsfw():

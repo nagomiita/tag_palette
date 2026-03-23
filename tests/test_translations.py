@@ -1,4 +1,4 @@
-from tag_palette.translations import is_japanese, is_preferably_japanese
+from tag_palette.shared.translations import is_japanese, is_preferably_japanese
 
 
 def test_is_japanese_with_kanji():

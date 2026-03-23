@@ -18,7 +18,7 @@ _csv_df = None
 def _get_csv_df():
     global _csv_df
     if _csv_df is None:
-        from tag_palette._csv_reader import load_clean_tag_csv
+        from tag_palette.shared.csv_reader import load_clean_tag_csv
 
         _csv_df = load_clean_tag_csv(require_alias=False)
     return _csv_df

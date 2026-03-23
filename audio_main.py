@@ -41,8 +41,8 @@ if sys.platform == "win32":
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tag_palette.audio_labels_ja import get_japanese_description
-from tag_palette.audio_tagger import (
+from tag_palette.audio.labels_ja import get_japanese_description
+from tag_palette.audio.tagger import (
     AudioTagResult,
     AudioType,
     detect_type_from_path,

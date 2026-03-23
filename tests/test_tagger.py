@@ -1,4 +1,4 @@
-from tag_palette.tagger import TagResult
+from tag_palette.media.tagger import TagResult
 
 
 def test_tag_result_creation():
