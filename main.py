@@ -77,6 +77,7 @@ def get_genre_ja(genre_key: str) -> str:
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus"}
 NOVEL_EXTENSIONS = {".txt", ".pdf"}
+HTML_EXTENSIONS = {".html", ".htm"}
 THUMBNAIL_SIZE = (300, 300)
 STATE_FILE = Path("last_run.txt")
 SAVE_INTERVAL = 100
@@ -263,6 +264,11 @@ def is_eagle_audio_file(eagle_image: EagleImage) -> bool:
 def is_eagle_novel_file(eagle_image: EagleImage) -> bool:
     """小説ファイルかどうかを判定する。"""
     return f".{eagle_image.ext}".lower() in NOVEL_EXTENSIONS
+
+
+def is_eagle_html_file(eagle_image: EagleImage) -> bool:
+    """HTMLファイルかどうかを判定する。"""
+    return f".{eagle_image.ext}".lower() in HTML_EXTENSIONS
 
 
 def ensure_thumbnail(eagle_image: EagleImage) -> None:

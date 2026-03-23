@@ -15,13 +15,13 @@ import argparse
 import csv
 import json
 import logging
+import sqlite3
 import sys
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
-
-import sqlite3
 
 import numpy as np
 
@@ -86,6 +86,22 @@ class AudioPaletteEntry:
     transcript: str | None
     model_name: str
     tags: dict[str, float]
+    generated_at: str
+
+
+@dataclass
+class NovelPaletteEntry:
+    """tag_palette.json 1件分 (小説)。"""
+
+    novel_id: str
+    title: str
+    author: str
+    url: str
+    tags: list[str]  # ラベル名のリスト
+    is_sensitive: bool
+    num_chunks: int
+    num_morphemes: int
+    chunks: list[dict]  # [{"seq": int, "kind": str, "body": str}, ...]
     generated_at: str
 
 
@@ -256,16 +272,20 @@ def save_last_import(image_dir: Path, run_time: datetime) -> None:
 
 
 def load_tag_palettes(
-    image_dir: Path, *, since: datetime | None = None
-) -> tuple[list[TagPaletteEntry], list[AudioPaletteEntry]]:
+    image_dir: Path,
+    *,
+    since: datetime | None = None,
+    since_generated: datetime | None = None,
+) -> tuple[list[TagPaletteEntry], list[AudioPaletteEntry], list[NovelPaletteEntry]]:
     """images ディレクトリから tag_palette.json を読み込む。
 
     Returns:
-        (media_entries, audio_entries) のタプル。
+        (media_entries, audio_entries, novel_entries) のタプル。
     """
     cutoff = since.timestamp() if since else 0
     entries: list[TagPaletteEntry] = []
     audio_entries: list[AudioPaletteEntry] = []
+    novel_entries: list[NovelPaletteEntry] = []
 
     scanned = 0
     skipped = 0
@@ -275,7 +295,10 @@ def load_tag_palettes(
 
         scanned += 1
         if scanned % 5000 == 0:
-            logger.info("スキャン中... %d ディレクトリ (読み込み: %d media, %d audio, スキップ: %d)", scanned, len(entries), len(audio_entries), skipped)
+            logger.info(
+                "スキャン中... %d ディレクトリ (media: %d, audio: %d, novel: %d, スキップ: %d)",
+                scanned, len(entries), len(audio_entries), len(novel_entries), skipped,
+            )
 
         tp_path = info_dir / "tag_palette.json"
         if not tp_path.exists():
@@ -292,8 +315,17 @@ def load_tag_palettes(
             logger.warning("読み込み失敗: %s -> %s", tp_path, e)
             continue
 
-        # 音声エントリの場合
-        if data.get("media_type") == "audio":
+        # generated_at フィルタ
+        if since_generated:
+            gen_at = data.get("generated_at", "")
+            if gen_at and gen_at < since_generated.isoformat():
+                skipped += 1
+                continue
+
+        media_type = data.get("media_type", "")
+
+        # ── 音声エントリ ──
+        if media_type == "audio":
             asset_id = data.get("id", info_dir.name.replace(".info", ""))
             audio_entries.append(
                 AudioPaletteEntry(
@@ -314,6 +346,27 @@ def load_tag_palettes(
             )
             continue
 
+        # ── 小説エントリ ──
+        if media_type == "novel":
+            novel_id = data.get("id", info_dir.name.replace(".info", ""))
+            raw_tags = data.get("tags", [])
+            novel_entries.append(
+                NovelPaletteEntry(
+                    novel_id=novel_id,
+                    title=data.get("title", ""),
+                    author=data.get("author", ""),
+                    url=data.get("url", ""),
+                    tags=raw_tags if isinstance(raw_tags, list) else [],
+                    is_sensitive=bool(data.get("is_sensitive", False)),
+                    num_chunks=data.get("num_chunks", 0),
+                    num_morphemes=data.get("num_morphemes", 0),
+                    chunks=data.get("chunks", []),
+                    generated_at=data.get("generated_at", ""),
+                )
+            )
+            continue
+
+        # ── メディアエントリ (画像/動画/HTML) ──
         image_id = data.get("image_id") or data.get(
             "id", info_dir.name.replace(".info", "")
         )
@@ -373,8 +426,13 @@ def load_tag_palettes(
             )
         )
 
-    logger.info("スキャン完了: %d ディレクトリ (media: %d, audio: %d, スキップ: %d)", scanned, len(entries), len(audio_entries), skipped)
-    return entries, audio_entries
+    html_count = sum(1 for e in entries if e.ext.lower().strip(".") in ("html", "htm"))
+    image_count = len(entries) - html_count
+    logger.info(
+        "スキャン完了: %d ディレクトリ (image: %d, html: %d, novel: %d, audio: %d, スキップ: %d)",
+        scanned, image_count, html_count, len(novel_entries), len(audio_entries), skipped,
+    )
+    return entries, audio_entries, novel_entries
 
 
 # ---------------------------------------------------------------------------
@@ -387,9 +445,15 @@ _VIDEO_EXTENSIONS = {
 _COMIC_TAGS = {"comic", "greyscale", "monochrome", "speech_bubble"}
 
 
+_HTML_EXTENSIONS = {"html", "htm"}
+
+
+
 def _detect_media_type(ext: str, tags: dict[str, float] | None = None) -> str:
     if ext.lower().strip(".") in _VIDEO_EXTENSIONS:
         return "VIDEO"
+    if ext.lower().strip(".") in _HTML_EXTENSIONS:
+        return "HTML"
     if tags and _COMIC_TAGS & tags.keys():
         return "MANGA"
     return "IMAGE"
@@ -712,33 +776,196 @@ def import_audio_entries(
     return stats
 
 
+def _new_uuid() -> str:
+    return uuid.uuid4().hex
+
+
+def _ensure_label(
+    conn: sqlite3.Connection,
+    cache: dict[str, str],
+    name: str,
+) -> str:
+    """novel_labels を get or create し、ID を返す。"""
+    if name in cache:
+        return cache[name]
+    row = conn.execute(
+        "SELECT id FROM novel_labels WHERE name = ?", (name,)
+    ).fetchone()
+    if row:
+        cache[name] = row[0]
+        return row[0]
+    label_id = _new_uuid()
+    conn.execute(
+        "INSERT INTO novel_labels (id, name) VALUES (?, ?)",
+        (label_id, name),
+    )
+    cache[name] = label_id
+    return label_id
+
+
+def _ensure_morpheme(
+    conn: sqlite3.Connection,
+    cache: dict[tuple[str, str], str],
+    surface: str,
+    pos: str,
+) -> str:
+    """novel_morphemes を get or create し、ID を返す。"""
+    key = (surface, pos)
+    if key in cache:
+        return cache[key]
+    row = conn.execute(
+        "SELECT id FROM novel_morphemes WHERE surface = ? AND pos = ?",
+        (surface, pos),
+    ).fetchone()
+    if row:
+        cache[key] = row[0]
+        return row[0]
+    morph_id = _new_uuid()
+    conn.execute(
+        "INSERT INTO novel_morphemes (id, surface, pos) VALUES (?, ?, ?)",
+        (morph_id, surface, pos),
+    )
+    cache[key] = morph_id
+    return morph_id
+
+
+def _auto_label_from_master(
+    conn: sqlite3.Connection, title: str, body: str,
+) -> list[str]:
+    """既存の novel_labels をタイトル+本文から部分一致で自動付与する。"""
+    rows = conn.execute(
+        "SELECT name FROM novel_labels ORDER BY length(name) DESC"
+    ).fetchall()
+    text = title + "\n" + body
+    return [name for (name,) in rows if len(name) >= 2 and name in text]
+
+
+def import_novel_entries(
+    conn: sqlite3.Connection,
+    entries: list[NovelPaletteEntry],
+) -> dict[str, int]:
+    """小説エントリを novels / novel_chunks / novel_labels / novel_morphemes テーブルに書き込む。
+
+    ingest_local.py と同等のロジック:
+    - UUID ベースの ID 生成
+    - 形態素解析 (extract_morphemes)
+    - 自動ラベル付与 (_auto_label_from_master)
+    """
+    from tag_palette.novel.morpheme import extract_morphemes
+
+    stats = {
+        "novels_created": 0,
+        "novels_skipped": 0,
+        "chunks_created": 0,
+        "morphemes_created": 0,
+        "labels_linked": 0,
+    }
+
+    # 既存 novels を一括取得
+    all_ids = [e.novel_id for e in entries]
+    existing_novels: set[str] = set()
+    for batch in _chunked(all_ids, BATCH_SIZE):
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            f"SELECT id FROM novels WHERE id IN ({placeholders})", batch
+        ).fetchall()
+        existing_novels.update(r[0] for r in rows)
+
+    label_cache: dict[str, str] = {}
+    morph_cache: dict[tuple[str, str], str] = {}
+
+    for i, entry in enumerate(entries):
+        novel_id = entry.novel_id
+
+        # 既存ならスキップ (ingest_local.py と同じ方針)
+        if novel_id in existing_novels:
+            stats["novels_skipped"] += 1
+            continue
+
+        # 1. novels INSERT
+        conn.execute(
+            "INSERT INTO novels (id, title, author, url, is_sensitive) VALUES (?, ?, ?, ?, ?)",
+            (novel_id, entry.title, entry.author, entry.url, entry.is_sensitive),
+        )
+        existing_novels.add(novel_id)
+        stats["novels_created"] += 1
+
+        # 2. ラベル (タグ) の紐付け
+        tag_names = list(entry.tags)
+        if not tag_names and entry.chunks:
+            # タグが無い場合は自動ラベル付与
+            full_body = "\n".join(c.get("body", "") for c in entry.chunks)
+            tag_names = _auto_label_from_master(conn, entry.title, full_body)
+            if tag_names:
+                logger.info("  自動ラベル: %s", ", ".join(tag_names[:10]))
+
+        for tag_name in tag_names:
+            tag_name = tag_name.strip()
+            if not tag_name:
+                continue
+            label_id = _ensure_label(conn, label_cache, tag_name)
+            assoc_id = _new_uuid()
+            conn.execute(
+                "INSERT OR IGNORE INTO novel_label_associations (id, novel_id, label_id) "
+                "VALUES (?, ?, ?)",
+                (assoc_id, novel_id, label_id),
+            )
+            stats["labels_linked"] += 1
+
+        # 3. チャンク + 形態素
+        cm_batch: list[tuple] = []
+        for chunk in entry.chunks:
+            chunk_id = _new_uuid()
+            seq = chunk.get("seq", 0)
+            kind = chunk.get("kind", "narrative")
+            body = chunk.get("body", "")
+
+            conn.execute(
+                "INSERT INTO novel_chunks (id, novel_id, seq, kind, body) VALUES (?, ?, ?, ?, ?)",
+                (chunk_id, novel_id, seq, kind, body),
+            )
+            stats["chunks_created"] += 1
+
+            # 形態素解析
+            morpheme_counts = extract_morphemes(body)
+            for (surface, pos), count in morpheme_counts.items():
+                morph_id = _ensure_morpheme(conn, morph_cache, surface, pos)
+                cm_batch.append((_new_uuid(), chunk_id, morph_id, count))
+            stats["morphemes_created"] += len(morpheme_counts)
+
+            if len(cm_batch) >= BATCH_SIZE:
+                conn.executemany(
+                    "INSERT INTO novel_chunk_morphemes (id, chunk_id, morpheme_id, count) "
+                    "VALUES (?, ?, ?, ?)",
+                    cm_batch,
+                )
+                cm_batch.clear()
+
+        if cm_batch:
+            conn.executemany(
+                "INSERT INTO novel_chunk_morphemes (id, chunk_id, morpheme_id, count) "
+                "VALUES (?, ?, ?, ?)",
+                cm_batch,
+            )
+
+        if (i + 1) % 10 == 0:
+            conn.commit()
+            logger.info("小説インポート: %d / %d 件", i + 1, len(entries))
+
+    conn.commit()
+    return stats
+
+
 # ---------------------------------------------------------------------------
 # ポストインポート: desc_text + desc_embedding 生成
 # ---------------------------------------------------------------------------
 
-DESC_MODEL = "tag-based-v1"
+DESC_MODEL = "tag-csv-v1"
 EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-small"
-
-# DB の category_id → compose_description が期待するカテゴリ名
-_CATEGORY_MAP: dict[str | None, str] = {
-    "character": "characters",
-    "meta": "meta",
-    "appearance": "appearance",
-    "costume": "costume",
-    "pose": "pose",
-    "emotion": "emotion",
-    "composition": "composition",
-    "background": "situation",
-    "copyright": "meta",
-    "general": "general",
-    None: "general",
-}
 
 
 def _backfill_desc_text(conn: sqlite3.Connection) -> int:
-    """desc_text が NULL のメディアにタグベース説明文を生成して埋める。"""
-    from infer_csv_descriptions import compose_description
-
+    """desc_text が NULL のメディアにタグのカンマ区切りを埋める。"""
     media_ids = [
         r[0]
         for r in conn.execute(
@@ -748,33 +975,32 @@ def _backfill_desc_text(conn: sqlite3.Connection) -> int:
     if not media_ids:
         return 0
 
-    # タグを一括取得
+    # タグを confidence 降順で一括取得
     placeholders = ",".join("?" for _ in media_ids)
     tag_rows = conn.execute(
         f"""
-        SELECT mt.media_id, t.name, t.category_id
+        SELECT mt.media_id, t.name, mt.confidence
         FROM media_tags mt
         JOIN tags t ON t.id = mt.tag_id
         WHERE mt.media_id IN ({placeholders})
+        ORDER BY mt.media_id, mt.confidence DESC
         """,
         media_ids,
     ).fetchall()
 
-    tags_by_media: dict[str, dict[str, list[str]]] = {mid: {} for mid in media_ids}
-    for media_id, tag_name, category_id in tag_rows:
-        if not tag_name:
-            continue
-        cat = _CATEGORY_MAP.get(category_id, "general")
-        tags_by_media[media_id].setdefault(cat, []).append(tag_name)
+    tags_by_media: dict[str, list[str]] = {mid: [] for mid in media_ids}
+    for media_id, tag_name, _conf in tag_rows:
+        if tag_name:
+            tags_by_media[media_id].append(tag_name)
 
     updated = 0
     for media_id in media_ids:
-        raw_tags = tags_by_media.get(media_id, {})
-        if not any(raw_tags.values()):
+        tag_list = tags_by_media.get(media_id, [])
+        if not tag_list:
             continue
-        description, _confidence = compose_description(raw_tags)
+        description = ", ".join(tag_list)
         conn.execute(
-            "UPDATE media SET desc_text = ?, desc_model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE media SET desc_text = ?, desc_model = ? WHERE id = ?",
             (description, DESC_MODEL, media_id),
         )
         updated += 1
@@ -860,6 +1086,12 @@ def main() -> None:
         action="store_true",
         help="全件再インポート (前回実行時刻を無視)",
     )
+    parser.add_argument(
+        "--since-generated",
+        type=str,
+        default=None,
+        help="generated_at がこの日時以降のエントリのみ対象 (例: 2026-03-23T15:40:00)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -900,15 +1132,27 @@ def main() -> None:
     trans_cache = load_translation_cache()
     category_rules = load_category_rules()
 
+    # --since-generated が指定された場合は since を無視
+    since_generated = None
+    if args.since_generated:
+        since_generated = datetime.fromisoformat(args.since_generated)
+        since = None
+        logger.info("--since-generated: %s 以降に生成されたエントリのみ対象", since_generated.isoformat())
+
     # tag_palette.json 読み込み
-    entries, audio_entries = load_tag_palettes(args.image_dir, since=since)
-    if not entries and not audio_entries:
+    entries, audio_entries, novel_entries = load_tag_palettes(
+        args.image_dir, since=since, since_generated=since_generated,
+    )
+    if not entries and not audio_entries and not novel_entries:
         logger.info("対象の tag_palette.json がありません。")
         save_last_import(args.image_dir, run_time)
         return
 
     if args.dry_run:
-        logger.info("dry-run: media %d 件, audio %d 件。書き込みスキップ。", len(entries), len(audio_entries))
+        logger.info(
+            "dry-run: media %d 件, audio %d 件, novel %d 件。書き込みスキップ。",
+            len(entries), len(audio_entries), len(novel_entries),
+        )
         for e in entries[:3]:
             if e.tags:
                 sample_tag = next(iter(e.tags))
@@ -926,6 +1170,13 @@ def main() -> None:
                 a.file_name,
                 a.audio_type,
                 a.duration_ms or 0,
+            )
+        for n in novel_entries[:3]:
+            logger.info(
+                "  [novel] %s: %s, %d chunks",
+                n.title,
+                n.author,
+                n.num_chunks,
             )
         return
 
@@ -965,7 +1216,15 @@ def main() -> None:
                 if val:
                     logger.info("  %s: %d", key, val)
 
-        # 4. desc_text + desc_embedding 補完（オプション）
+        # 4. 小説エントリインポート
+        if novel_entries:
+            novel_stats = import_novel_entries(conn, novel_entries)
+            logger.info("小説インポート完了:")
+            for key, val in novel_stats.items():
+                if val:
+                    logger.info("  %s: %d", key, val)
+
+        # 5. desc_text + desc_embedding 補完（オプション）
         try:
             post_import_desc(conn)
         except ImportError as e:
