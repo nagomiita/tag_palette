@@ -38,7 +38,7 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from tag_palette.audio.labels_ja import get_japanese_description
@@ -94,7 +94,7 @@ def _save_result_json(audio_path: Path, result: AudioTagResult, output_dir: Path
         "model_name": result.model_name,
         "tags": result.tags,
         "transcript": result.transcript,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now().isoformat(),
     }
 
     with open(json_path, "w", encoding="utf-8") as f:
@@ -109,7 +109,7 @@ def _save_result_json(audio_path: Path, result: AudioTagResult, output_dir: Path
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now().isoformat()
 
 
 def _import_to_sqlite(

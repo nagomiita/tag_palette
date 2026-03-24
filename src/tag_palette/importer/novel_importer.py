@@ -116,6 +116,7 @@ def import_novel_entries(
         # 既存ならスキップ (ingest_local.py と同じ方針)
         if novel_id in existing_novels:
             stats["novels_skipped"] += 1
+            logger.debug("  スキップ (既存): %s %s", novel_id, entry.title)
             continue
 
         # 1. novels INSERT

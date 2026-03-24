@@ -80,12 +80,22 @@ def load_tag_palettes(
             logger.warning("読み込み失敗: %s -> %s", tp_path, e)
             continue
 
-        # generated_at フィルタ
-        if since_generated:
-            gen_at = data.get("generated_at", "")
-            if gen_at and gen_at < since_generated.isoformat():
-                skipped += 1
-                continue
+        # generated_at フィルタ (st_mtime より正確)
+        gen_at = data.get("generated_at", "")
+        if since and gen_at:
+            try:
+                if gen_at < since.isoformat():
+                    skipped += 1
+                    continue
+            except (TypeError, ValueError):
+                pass
+        if since_generated and gen_at:
+            try:
+                if gen_at < since_generated.isoformat():
+                    skipped += 1
+                    continue
+            except (TypeError, ValueError):
+                pass
 
         media_type = data.get("media_type", "")
 

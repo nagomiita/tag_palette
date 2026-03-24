@@ -26,7 +26,7 @@ def write_manga_to_eagle(
     """
     from tag_palette.manga.analyzer import analyze_manga_page
     from tag_palette import generate_tags, translate_tags
-    from tag_palette.tagger import TagResult
+    from tag_palette.media.tagger import TagResult
 
     image_path = eagle_image.image_path
 

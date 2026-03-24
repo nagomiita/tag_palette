@@ -15,7 +15,7 @@ import argparse
 import logging
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from tag_palette.importer.audio_importer import import_audio_entries
@@ -90,7 +90,7 @@ def main() -> None:
         sys.exit(1)
 
     # 今回の実行時刻を記録 (探索前に取得)
-    run_time = datetime.now(timezone.utc)
+    run_time = datetime.now()
 
     # 前回実行時刻
     if args.force:
