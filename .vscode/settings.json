@@ -6,6 +6,5 @@
       "source.organizeImports": "explicit"
     },
     "editor.defaultFormatter": "charliermarsh.ruff"
-  },
-  "python.analysis.exclude": ["app/images", "app/images_dev"]
+  }
 }
