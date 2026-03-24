@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +14,10 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus"}
 NOVEL_EXTENSIONS = {".txt", ".pdf"}
 HTML_EXTENSIONS = {".html", ".htm"}
+
+
+_MANGA_TAGS = {"漫画", "manga", "comic", "コミック"}
+_MANGA_FOLDER_NAMES = {"漫画", "manga", "comic", "comics", "コミック"}
 
 
 @dataclass
@@ -27,6 +31,8 @@ class EagleImage:
     eagle_id: str  # Eagle ID
     name: str  # 画像名
     ext: str  # 拡張子
+    eagle_tags: list[str] = field(default_factory=list)  # Eagle metadata の tags
+    eagle_folders: list[str] = field(default_factory=list)  # Eagle metadata の folders 名
 
 
 def is_image_file(eagle_image: EagleImage) -> bool:
@@ -42,6 +48,47 @@ def is_eagle_audio_file(eagle_image: EagleImage) -> bool:
 def is_eagle_novel_file(eagle_image: EagleImage) -> bool:
     """小説ファイルかどうかを判定する。"""
     return f".{eagle_image.ext}".lower() in NOVEL_EXTENSIONS
+
+
+_COMIC_WD14_TAGS = {"comic", "speech_bubble", "4koma", "manga_(medium)"}
+
+
+def is_manga_image(
+    image_path: str | Path,
+    wd14_tags: dict[str, float] | None = None,
+    *,
+    classify_threshold: float = 0.5,
+    tag_threshold: float = 0.3,
+) -> bool:
+    """画像が漫画ページかどうかを判定する。
+
+    anime_classify の comic スコアをメインに、WD14 タグをフォールバックとして使用。
+
+    Parameters:
+        image_path: 画像パス (anime_classify に渡す)
+        wd14_tags: WD14 タグ付け結果 (あれば)
+        classify_threshold: anime_classify の comic スコア閾値
+        tag_threshold: WD14 タグの信頼度閾値
+
+    Returns:
+        漫画なら True
+    """
+    # 1. anime_classify で判定
+    try:
+        from imgutils.validate import anime_classify_score
+        scores = anime_classify_score(str(image_path))
+        if scores.get("comic", 0) >= classify_threshold:
+            return True
+    except Exception:
+        pass
+
+    # 2. WD14 タグでフォールバック
+    if wd14_tags:
+        for tag in _COMIC_WD14_TAGS:
+            if wd14_tags.get(tag, 0) >= tag_threshold:
+                return True
+
+    return False
 
 
 def is_eagle_html_file(eagle_image: EagleImage) -> bool:
@@ -105,6 +152,11 @@ def find_eagle_images(
 
         eagle_id = meta.get("id", info_dir.name.replace(".info", ""))
         thumbnail_path = info_dir / f"{name}_thumbnail.png"
+        eagle_tags = meta.get("tags", [])
+        eagle_folders = [f.get("name", "") for f in meta.get("folders", []) if isinstance(f, dict)]
+        if not eagle_folders:
+            # folders が文字列リストの場合
+            eagle_folders = [f for f in meta.get("folders", []) if isinstance(f, str)]
         images.append(
             EagleImage(
                 info_dir=info_dir,
@@ -114,6 +166,8 @@ def find_eagle_images(
                 eagle_id=eagle_id,
                 name=name,
                 ext=ext,
+                eagle_tags=eagle_tags,
+                eagle_folders=eagle_folders,
             )
         )
 

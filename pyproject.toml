@@ -24,6 +24,7 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "torch>=2.6.0",
     "unidic-lite>=1.0.8",
+    "ndlocr-lite",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +57,7 @@ explicit = true
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
+ndlocr-lite = { git = "https://github.com/nagomiita/ndlocr-lite.git" }
 
 # bchlib は C コンパイラ必須 (CCIP には不要) なので除外
 [tool.uv]

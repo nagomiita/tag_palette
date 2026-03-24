@@ -36,10 +36,10 @@ from tag_palette.media.eagle_scanner import (
     find_eagle_images,
     is_eagle_audio_file,
     is_eagle_novel_file,
+    is_manga_image,
 )
 from tag_palette.media.image_processor import convert_heic_to_webp, ensure_thumbnail
 from tag_palette.media.tag_writer import write_tags_to_eagle
-from tag_palette.novel.tag_writer import write_novel_to_eagle
 from tag_palette.shared.run_state import (
     load_last_run,
     save_last_run,
@@ -144,6 +144,8 @@ def main() -> None:
         elif is_eagle_novel_file(eagle_image):
             # ── 小説処理 ──
             try:
+                from tag_palette.novel.tag_writer import write_novel_to_eagle
+
                 novel_info = write_novel_to_eagle(eagle_image)
                 processed += 1
                 logger.info(
@@ -183,6 +185,23 @@ def main() -> None:
                         save_translation_cache()
                         save_tag_embeddings()
                         logger.info("キャッシュ保存 (%d件処理済み)", processed)
+
+                    # 漫画判定 → 追加OCR
+                    if is_manga_image(eagle_image.image_path, tag_results[0].tags):
+                        try:
+                            from tag_palette.manga.tag_writer import write_manga_to_eagle
+
+                            manga_info = write_manga_to_eagle(
+                                eagle_image, model_name=args.model,
+                            )
+                            logger.info(
+                                "  Manga OCR: %d panels, %d texts%s",
+                                manga_info["num_panels"],
+                                manga_info["num_texts"],
+                                f" [{manga_info['ocr_preview']}]" if manga_info.get("ocr_preview") else "",
+                            )
+                        except Exception as e:
+                            logger.error("Failed (manga OCR): %s -> %s", eagle_image.eagle_id, e)
             except Exception as e:
                 logger.error("Failed: %s -> %s", eagle_image.eagle_id, e)
 
