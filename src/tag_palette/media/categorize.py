@@ -20,7 +20,7 @@ def _get_csv_df():
     if _csv_df is None:
         from tag_palette.shared.csv_reader import load_clean_tag_csv
 
-        _csv_df = load_clean_tag_csv(require_alias=False)
+        _csv_df = load_clean_tag_csv(require_ja=False)
     return _csv_df
 
 

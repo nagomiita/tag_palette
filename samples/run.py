@@ -50,7 +50,7 @@ def print_result(result, image_name: str = "") -> None:
     for tag, confidence in result.tags.items():
         category = get_tag_category(tag)
         translation = get_translation_for_tag(tag)
-        ja = f" ({translation})" if translation else ""
+        ja = f" ({translation[0]})" if translation else ""
         print(f"    {confidence:.3f}  {tag}{ja}  [{category}]")
 
 
@@ -74,7 +74,6 @@ def run_batch(images: list[Path], args: argparse.Namespace) -> None:
         images,
         model_name=args.model,
         batch_size=args.batch_size,
-        max_workers=args.workers,
         on_batch_done=on_batch_done,
     )
     print()
@@ -95,7 +94,6 @@ def main() -> None:
     )
     parser.add_argument("--batch", action="store_true", help="バッチ処理モード")
     parser.add_argument("--batch-size", type=int, default=4, help="バッチサイズ")
-    parser.add_argument("--workers", type=int, default=4, help="前処理の並列ワーカー数")
     args = parser.parse_args()
 
     images = find_images()

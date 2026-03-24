@@ -26,10 +26,10 @@ for result in results:
         print(f"  {tag}: {confidence:.2f}")
 ```
 
-デフォルトモデルは `wd-eva02-large-tagger-v3` です。モデルを指定することもできます。
+デフォルトモデルは `EVA02_Large` です。モデルを指定することもできます。
 
 ```python
-results = generate_tags("image.jpg", model_name="pixai-tagger-v0.9")
+results = generate_tags("image.jpg", model_name="pixai")
 ```
 
 全モデルで推論する場合:
@@ -42,22 +42,20 @@ results = generate_tags("image.jpg", use_all_models=True)
 
 | モデル名 | 種別 |
 |---------|------|
-| `wd-eva02-large-tagger-v3` | WaifuDiffusion (デフォルト) |
-| `wd-vit-large-tagger-v3` | WaifuDiffusion |
-| `wd14-convnextv2.v1` | WaifuDiffusion |
-| `wd14-vit.v1` / `wd14-vit.v2` | WaifuDiffusion |
-| `wd14-convnext.v1` / `wd14-convnext.v2` | WaifuDiffusion |
-| `wd14-swinv2-v1` | WaifuDiffusion |
-| `wd-v1-4-moat-tagger.v2` | WaifuDiffusion |
-| `wd-v1-4-vit-tagger.v3` | WaifuDiffusion |
-| `wd-v1-4-convnext-tagger.v3` | WaifuDiffusion |
-| `wd-v1-4-swinv2-tagger.v3` | WaifuDiffusion |
-| `z3d-e621-convnext-toynya` | WaifuDiffusion |
-| `z3d-e621-convnext-silveroxides` | WaifuDiffusion |
-| `mld-caformer.dec-5-97527` | ML-Danbooru |
-| `mld-tresnetd.6-30000` | ML-Danbooru |
-| `camie-tagger` | Camie Tagger |
-| `camie-tagger-v2` | Camie Tagger |
+| `EVA02_Large` | WD14 (デフォルト) |
+| `ViT_Large` | WD14 |
+| `SwinV2_v3` | WD14 |
+| `ConvNext_v3` | WD14 |
+| `ViT_v3` | WD14 |
+| `SwinV2` | WD14 |
+| `ConvNext` | WD14 |
+| `ConvNextV2` | WD14 |
+| `ViT` | WD14 |
+| `MOAT` | WD14 |
+| `camie_initial` | Camie Tagger |
+| `camie_v2` | Camie Tagger |
+| `mldanbooru` | ML-Danbooru |
+| `pixai` | PixAI |
 
 ### タグのカテゴリ分類
 
@@ -75,13 +73,13 @@ get_tag_category("vocaloid")      # "copyright"
 
 ### センシティブ判定
 
-タグがセンシティブコンテンツに該当するか判定します。
+WD14 の rating からセンシティブコンテンツに該当するか判定します。
 
 ```python
-from tag_palette import is_sensitive
+from tag_palette import generate_tags, is_sensitive_by_ratings
 
-is_sensitive("flower")   # False
-is_sensitive("bondage")  # True
+result = generate_tags("image.jpg")[0]
+is_sensitive_by_ratings(result.ratings)  # True / False / None
 ```
 
 ### タグの日本語翻訳
@@ -121,13 +119,18 @@ genres = get_genres("artoria_pendragon_(fate)")
 ### 組み合わせ例
 
 ```python
-from tag_palette import generate_tags, get_tag_category, is_sensitive, get_translation_for_tag
+from tag_palette import (
+    generate_tags,
+    get_tag_category,
+    get_translation_for_tag,
+    is_sensitive_by_ratings,
+)
 
 results = generate_tags("image.jpg")
 for result in results:
     for tag, confidence in result.tags.items():
         category = get_tag_category(tag)
-        sensitive = is_sensitive(tag)
+        sensitive = is_sensitive_by_ratings(result.ratings)
         translation = get_translation_for_tag(tag)
         ja_name = translation[0] if translation else tag
 
@@ -157,7 +160,7 @@ Eagle ライブラリの images ディレクトリを走査し、各コンテン
 uv run python main.py --image-dir /path/to/eagle.library/images
 
 # モデル指定
-uv run python main.py --image-dir /path/to/eagle.library/images --model wd-eva02-large-tagger-v3
+uv run python main.py --image-dir /path/to/eagle.library/images --model EVA02_Large
 
 # 全件再処理 (既処理スキップを無効化)
 uv run python main.py --image-dir /path/to/eagle.library/images --force
@@ -169,7 +172,7 @@ uv run python main.py --image-dir /path/to/eagle.library/images --log-file outpu
 | 引数 | 必須 | デフォルト | 説明 |
 |------|------|-----------|------|
 | `--image-dir` | Yes | - | Eagle ライブラリの images ディレクトリ |
-| `--model` | No | `wd-eva02-large-tagger-v3` | タグ生成モデル名 |
+| `--model` | No | `EVA02_Large` | タグ生成モデル名 |
 | `--force` | No | `false` | 既処理スキップを無効化し全件再処理 |
 | `--log-file` | No | なし | ログ出力先ファイル |
 
