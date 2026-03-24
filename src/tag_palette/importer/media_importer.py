@@ -232,17 +232,22 @@ def import_entries(
                     "UPDATE media SET portrait_scores = ? WHERE id = ? AND portrait_scores IS NULL",
                     (portrait_json, media_id),
                 )
+            if entry.ocr_text is not None:
+                conn.execute(
+                    "UPDATE media SET ocr_text = ? WHERE id = ? AND ocr_text IS NULL",
+                    (entry.ocr_text, media_id),
+                )
                 stats["media_updated"] += 1
         else:
             conn.execute(
                 "INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path, "
                 "is_sensitive, ai_score, real_score, monochrome_score, classify_scores, completeness_scores, "
-                "portrait_scores, media_type, genre_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "portrait_scores, media_type, genre_id, ocr_text, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
                  entry.is_sensitive, entry.ai_score, entry.real_score,
                  entry.monochrome_score, classify_json, completeness_json, portrait_json,
-                 media_type, entry.genre, now),
+                 media_type, entry.genre, entry.ocr_text, now),
             )
             existing_media.add(media_id)
             stats["media_created"] += 1

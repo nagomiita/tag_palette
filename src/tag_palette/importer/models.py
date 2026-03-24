@@ -30,6 +30,7 @@ class TagPaletteEntry:
     tag_embedding: bytes | None  # embedding.npy から読み込んだ生バイト
     ccip_embedding: bytes | None  # ccip_embedding.npy から読み込んだ生バイト
     pose_embedding: bytes | None  # pose_embedding.npy から読み込んだ生バイト
+    ocr_text: str | None  # 漫画OCRテキスト
 
 
 @dataclass

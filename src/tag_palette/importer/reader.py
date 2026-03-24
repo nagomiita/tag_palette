@@ -188,6 +188,7 @@ def load_tag_palettes(
                 tag_embedding=tag_embedding,
                 ccip_embedding=ccip_embedding,
                 pose_embedding=pose_embedding,
+                ocr_text=data.get("ocr_full_text"),
             )
         )
 
