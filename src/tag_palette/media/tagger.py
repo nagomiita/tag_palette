@@ -36,6 +36,19 @@ PIXAI_MODELS = {"pixai"}
 
 ALL_MODELS = WD14_MODELS | CAMIE_MODELS | MLDANBOORU_MODELS | PIXAI_MODELS
 
+# 画像の内容を表さないメタ・透かし系タグを除外
+_EXCLUDED_TAGS = frozenset({
+    "censored", "uncensored",
+    "watermark", "watermark_grid", "character_watermark",
+    "miyoushe_watermark", "sample_watermark", "weibo_watermark",
+    "too_many_watermarks",
+})
+
+
+def _filter_tags(tags: dict[str, float]) -> dict[str, float]:
+    """除外リストのタグを除去する。"""
+    return {k: v for k, v in tags.items() if k not in _EXCLUDED_TAGS}
+
 
 def _interrogate(image_path: Path, model_name: str) -> TagResult:
     """imgutils を使って1画像をタグ付けする。"""
@@ -51,7 +64,7 @@ def _interrogate(image_path: Path, model_name: str) -> TagResult:
             drop_overlap=True,
             fmt=("rating", "general", "character"),
         )
-        tags = {**general, **character}
+        tags = _filter_tags({**general, **character})
         return TagResult(model_name=model_name, tags=tags, ratings=rating or None)
 
     if model_name in CAMIE_MODELS:
@@ -63,18 +76,18 @@ def _interrogate(image_path: Path, model_name: str) -> TagResult:
             drop_overlap=True,
             fmt=("rating", "general", "character"),
         )
-        tags = {**general, **character}
+        tags = _filter_tags({**general, **character})
         return TagResult(model_name=model_name, tags=tags, ratings=rating or None)
 
     if model_name in MLDANBOORU_MODELS:
         from imgutils.tagging import get_mldanbooru_tags
-        tags = get_mldanbooru_tags(image_str, threshold=0.7, drop_overlap=True)
+        tags = _filter_tags(get_mldanbooru_tags(image_str, threshold=0.7, drop_overlap=True))
         return TagResult(model_name=model_name, tags=tags, ratings=None)
 
     if model_name in PIXAI_MODELS:
         from imgutils.tagging import get_pixai_tags
         general, character = get_pixai_tags(image_str, fmt=("general", "character"))
-        tags = {**general, **character}
+        tags = _filter_tags({**general, **character})
         return TagResult(model_name=model_name, tags=tags, ratings=None)
 
     raise ValueError(f"Unknown model: {model_name}. Available: {sorted(ALL_MODELS)}")
