@@ -10,9 +10,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# Regex to find dialogue 「...」 and thought (...) or （...）
+# Regex to find dialogue 「...」/『...』 and thought (...) or （...）
 _BRACKET_PATTERN = re.compile(
-    r"(「[^」]*」)"   # dialogue
+    r"(「[^」]*」|『[^』]*』)"   # dialogue
     r"|((?:\([^)]*\)|（[^）]*）))"  # thought
 )
 

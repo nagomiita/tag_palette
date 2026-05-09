@@ -18,8 +18,30 @@ DESC_MODEL_CSV = "tag-csv-v1"
 DESC_MODEL_OLLAMA = "ollama-v1"
 EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-small"
 
-OLLAMA_DEFAULT_HOST = "http://localhost:11434"
 OLLAMA_DEFAULT_MODEL = "huihui_ai/qwen3.5-abliterated:9b"
+
+
+def _default_ollama_host() -> str:
+    """環境変数から Ollama ホストを1つ返す（desc 生成は単一ホストで十分）。"""
+    from tag_palette.shared.env_config import get_ollama_hosts
+
+    return get_ollama_hosts()[0]
+
+
+def _load_embedding_model():
+    """Load the sentence-transformer on the preferred torch device."""
+    from sentence_transformers import SentenceTransformer
+
+    from tag_palette.shared.device import get_torch_device
+
+    device = get_torch_device()
+    logger.info("SentenceTransformer model loaded (device=%s)", device)
+    return SentenceTransformer(
+        EMBEDDING_MODEL_NAME,
+        device=device,
+        local_files_only=True,
+    )
+
 
 _OLLAMA_SYSTEM_PROMPT = """\
 あなたはイラスト・画像の説明文を生成するアシスタントです。
@@ -94,12 +116,13 @@ def _backfill_desc_text_csv(conn: sqlite3.Connection) -> int:
 
 def _generate_desc_ollama(
     tags: list[str],
-    host: str = OLLAMA_DEFAULT_HOST,
+    host: str | None = None,
     model: str = OLLAMA_DEFAULT_MODEL,
 ) -> str:
     """Ollama にタグ一覧を渡して説明文を生成する。"""
     from ollama import Client
 
+    host = host or _default_ollama_host()
     client = Client(host=host)
     tag_text = ", ".join(tags)
 
@@ -117,7 +140,7 @@ def _generate_desc_ollama(
 def backfill_desc_text_ollama(
     conn: sqlite3.Connection,
     *,
-    host: str = OLLAMA_DEFAULT_HOST,
+    host: str | None = None,
     model: str = OLLAMA_DEFAULT_MODEL,
     force: bool = False,
 ) -> int:
@@ -147,7 +170,8 @@ def backfill_desc_text_ollama(
     if not rows:
         return 0
 
-    logger.info("Ollama desc 対象: %d 件", len(rows))
+    host = host or _default_ollama_host()
+    logger.info("Ollama desc 対象: %d 件 (host=%s)", len(rows), host)
 
     updated = 0
     for i, (media_id, desc_text) in enumerate(rows):
@@ -180,8 +204,6 @@ def recompute_desc_embedding(conn: sqlite3.Connection) -> int:
 
     対象: desc_model が 'ollama-v1:*' のメディア。
     """
-    from sentence_transformers import SentenceTransformer
-
     pattern = f"{DESC_MODEL_OLLAMA}:%"
     rows = conn.execute(
         """
@@ -198,7 +220,7 @@ def recompute_desc_embedding(conn: sqlite3.Connection) -> int:
     if not rows:
         return 0
 
-    st_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    st_model = _load_embedding_model()
     texts = [r[1] for r in rows]
     embeddings = st_model.encode(
         texts, normalize_embeddings=True, show_progress_bar=len(texts) > 100,
@@ -216,8 +238,6 @@ def recompute_desc_embedding(conn: sqlite3.Connection) -> int:
 
 def _backfill_desc_embedding(conn: sqlite3.Connection) -> int:
     """desc_embedding が NULL のメディアに embedding を生成して埋める。"""
-    from sentence_transformers import SentenceTransformer
-
     rows = conn.execute(
         """
         SELECT m.id, m.desc_text
@@ -232,7 +252,7 @@ def _backfill_desc_embedding(conn: sqlite3.Connection) -> int:
     if not rows:
         return 0
 
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    model = _load_embedding_model()
     texts = [r[1] for r in rows]
     embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=len(texts) > 100)
 

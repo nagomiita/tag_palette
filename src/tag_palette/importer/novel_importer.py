@@ -128,13 +128,23 @@ def import_novel_entries(
         stats["novels_created"] += 1
 
         # 2. ラベル (タグ) の紐付け
+        # explicit tags (= Pixiv 等の作者付与タグ) を優先しつつ、既存
+        # novel_labels マスタから本文に出現する語も自動付与する。なろう
+        # PDF は explicit tags が空なので auto のみ、Pixiv は両方マージ
+        # する形になる。重複は除外。
         tag_names = list(entry.tags)
-        if not tag_names and entry.chunks:
-            # タグが無い場合は自動ラベル付与
+        if entry.chunks:
             full_body = "\n".join(c.get("body", "") for c in entry.chunks)
-            tag_names = _auto_label_from_master(conn, entry.title, full_body)
-            if tag_names:
-                logger.info("  自動ラベル: %s", ", ".join(tag_names[:10]))
+            auto = _auto_label_from_master(conn, entry.title, full_body)
+            seen = {t.strip() for t in tag_names if t.strip()}
+            new_auto = [name for name in auto if name not in seen]
+            if new_auto:
+                tag_names.extend(new_auto)
+                logger.info(
+                    "  自動ラベル: %s%s",
+                    ", ".join(new_auto[:10]),
+                    "..." if len(new_auto) > 10 else "",
+                )
 
         for tag_name in tag_names:
             tag_name = tag_name.strip()

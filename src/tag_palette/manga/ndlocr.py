@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from tag_palette.shared.device import get_onnx_device
+
 logger = logging.getLogger(__name__)
 
 _detector = None
@@ -54,6 +56,7 @@ def _load_models():
     resource_dir = _get_ndlocr_resource_dir()
     model_dir = resource_dir / "model"
     config_dir = resource_dir / "config"
+    device = get_onnx_device()
 
     logger.info("NDLOCR-Lite モデルをロード中...")
 
@@ -63,7 +66,7 @@ def _load_models():
         score_threshold=0.2,
         conf_threshold=0.25,
         iou_threshold=0.2,
-        device="cpu",
+        device=device,
     )
 
     classes_path = str(config_dir / "NDLmoji.yaml")
@@ -75,7 +78,7 @@ def _load_models():
         return PARSEQ(
             model_path=str(model_dir / weights_name),
             charlist=charlist,
-            device="cpu",
+            device=device,
         )
 
     _recognizer30 = _make_recognizer("parseq-ndl-16x256-30-tiny-192epoch-tegaki3.onnx")

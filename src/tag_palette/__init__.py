@@ -1,5 +1,12 @@
 """tag-palette: WD14 Tagger を使った画像タグ生成ライブラリ。"""
 
+import os as _os
+
+# HuggingFace Hub: デフォルトでオフラインモード（ローカルキャッシュのみ使用）。
+# 新しいモデルをダウンロードする必要がある場合は環境変数 HF_HUB_OFFLINE=0 を設定。
+if "HF_HUB_OFFLINE" not in _os.environ:
+    _os.environ["HF_HUB_OFFLINE"] = "1"
+
 from tag_palette.media.categorize import CATEGORY_ID_TO_NAME, get_tag_category
 from tag_palette.shared.embedding import (
     base64_to_embedding,

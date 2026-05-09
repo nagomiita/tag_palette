@@ -7,6 +7,7 @@ Usage (CLI):
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sqlite3
 import sys
@@ -16,14 +17,19 @@ import numpy as np
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+from tag_palette.shared.device import get_torch_device
+
 _model: SentenceTransformer | None = None
 _MODEL_NAME = "intfloat/multilingual-e5-small"
+logger = logging.getLogger(__name__)
 
 
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        _model = SentenceTransformer(_MODEL_NAME)
+        device = get_torch_device()
+        _model = SentenceTransformer(_MODEL_NAME, device=device, local_files_only=True)
+        logger.info("SentenceTransformer model loaded (device=%s)", device)
     return _model
 
 

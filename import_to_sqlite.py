@@ -27,7 +27,7 @@ from tag_palette.importer.csv_loader import (
     load_translation_cache,
 )
 from tag_palette.importer.desc_backfill import post_import_desc
-from tag_palette.importer.media_importer import import_entries, sync_master_data
+from tag_palette.importer.media_importer import import_entries, sync_master_data, sync_tag_embeddings
 from tag_palette.importer.novel_importer import import_novel_entries
 from tag_palette.importer.reader import (
     load_last_import,
@@ -171,7 +171,11 @@ def main() -> None:
                 all_entry_tags, category_rules,
             )
 
-        # 2. メディアエントリインポート
+        # 2. タグ埋め込み同期
+        if entries:
+            sync_tag_embeddings(conn)
+
+        # 3. メディアエントリインポート
         if entries:
             stats = import_entries(conn, entries)
             logger.info("メディアインポート完了:")
@@ -179,7 +183,7 @@ def main() -> None:
                 if val:
                     logger.info("  %s: %d", key, val)
 
-        # 3. 音声エントリインポート
+        # 4. 音声エントリインポート
         if audio_entries:
             audio_stats = import_audio_entries(conn, audio_entries)
             logger.info("音声インポート完了:")
@@ -187,7 +191,7 @@ def main() -> None:
                 if val:
                     logger.info("  %s: %d", key, val)
 
-        # 4. 小説エントリインポート
+        # 5. 小説エントリインポート
         if novel_entries:
             novel_stats = import_novel_entries(conn, novel_entries)
             logger.info("小説インポート完了:")
@@ -195,7 +199,7 @@ def main() -> None:
                 if val:
                     logger.info("  %s: %d", key, val)
 
-        # 5. desc_text + desc_embedding 補完（オプション）
+        # 6. desc_text + desc_embedding 補完（オプション）
         try:
             post_import_desc(conn)
         except ImportError as e:

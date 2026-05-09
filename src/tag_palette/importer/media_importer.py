@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import uuid
+
+import numpy as np
 
 from .csv_loader import match_category_rule
 from .models import (
@@ -237,18 +240,42 @@ def import_entries(
                     "UPDATE media SET ocr_text = ? WHERE id = ? AND ocr_text IS NULL",
                     (entry.ocr_text, media_id),
                 )
-                stats["media_updated"] += 1
-        else:
             conn.execute(
-                "INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path, "
-                "is_sensitive, ai_score, real_score, monochrome_score, classify_scores, completeness_scores, "
-                "portrait_scores, media_type, genre_id, ocr_text, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
-                 entry.is_sensitive, entry.ai_score, entry.real_score,
-                 entry.monochrome_score, classify_json, completeness_json, portrait_json,
-                 media_type, entry.genre, entry.ocr_text, now),
+                "UPDATE media SET media_type = ? WHERE id = ? AND media_type IS NULL",
+                (media_type, media_id),
             )
+            if entry.genre is not None:
+                conn.execute(
+                    "UPDATE media SET genre_id = ? WHERE id = ? AND genre_id IS NULL",
+                    (entry.genre, media_id),
+                )
+            conn.execute(
+                "UPDATE media SET is_sensitive = ? WHERE id = ? AND is_sensitive IS NULL",
+                (entry.is_sensitive, media_id),
+            )
+            stats["media_updated"] += 1
+        else:
+            try:
+                conn.execute(
+                    "INSERT INTO media (id, file_path, file_name, file_extension, thumbnail_path, "
+                    "is_sensitive, ai_score, real_score, monochrome_score, classify_scores, completeness_scores, "
+                    "portrait_scores, media_type, genre_id, ocr_text, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (media_id, file_path, entry.image_name, entry.ext, thumbnail_path,
+                     entry.is_sensitive, entry.ai_score, entry.real_score,
+                     entry.monochrome_score, classify_json, completeness_json, portrait_json,
+                     media_type, entry.genre, entry.ocr_text, now),
+                )
+            except sqlite3.IntegrityError:
+                existing = conn.execute(
+                    "SELECT id FROM media WHERE file_path = ?", (file_path,)
+                ).fetchone()
+                existing_id = existing[0] if existing else "?"
+                logger.error(
+                    "file_path 重複: new_id=%s existing_id=%s path=%s",
+                    media_id, existing_id, file_path,
+                )
+                raise
             existing_media.add(media_id)
             stats["media_created"] += 1
 
@@ -302,3 +329,45 @@ def import_entries(
 
     conn.commit()
     return stats
+
+
+def sync_tag_embeddings(conn: sqlite3.Connection) -> int:
+    """tags テーブルに存在して tag_embeddings に未登録のタグの埋め込みを生成・登録する。"""
+    from tag_palette.shared.embedding import (
+        _get_tag_embedding,
+        load_tag_embeddings,
+        save_tag_embeddings,
+    )
+
+    load_tag_embeddings()
+
+    # DB に既にある tag_embedding の tag_id
+    existing = {
+        r[0] for r in conn.execute("SELECT tag_id FROM tag_embeddings").fetchall()
+    }
+    # tags テーブルの全 ID
+    all_tags = {
+        r[0] for r in conn.execute("SELECT id FROM tags").fetchall()
+    }
+    missing = all_tags - existing
+    if not missing:
+        return 0
+
+    now = _now_iso()
+    inserted = 0
+    for batch in _chunked(list(missing), BATCH_SIZE):
+        for tag_id in batch:
+            vec = _get_tag_embedding(tag_id)
+            embedding_bytes = np.asarray(vec, dtype=np.float32).tobytes()
+            conn.execute(
+                "INSERT INTO tag_embeddings (id, tag_id, embedding, created_at) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(tag_id) DO NOTHING",
+                (uuid.uuid4().hex, tag_id, embedding_bytes, now),
+            )
+            inserted += 1
+        conn.commit()
+
+    if inserted:
+        save_tag_embeddings()
+        logger.info("タグ埋め込み同期: %d 件追加", inserted)
+    return inserted

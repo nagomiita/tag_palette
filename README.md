@@ -40,22 +40,22 @@ results = generate_tags("image.jpg", use_all_models=True)
 
 #### 対応モデル一覧
 
-| モデル名 | 種別 |
-|---------|------|
-| `EVA02_Large` | WD14 (デフォルト) |
-| `ViT_Large` | WD14 |
-| `SwinV2_v3` | WD14 |
-| `ConvNext_v3` | WD14 |
-| `ViT_v3` | WD14 |
-| `SwinV2` | WD14 |
-| `ConvNext` | WD14 |
-| `ConvNextV2` | WD14 |
-| `ViT` | WD14 |
-| `MOAT` | WD14 |
-| `camie_initial` | Camie Tagger |
-| `camie_v2` | Camie Tagger |
-| `mldanbooru` | ML-Danbooru |
-| `pixai` | PixAI |
+| モデル名        | 種別              |
+| --------------- | ----------------- |
+| `EVA02_Large`   | WD14 (デフォルト) |
+| `ViT_Large`     | WD14              |
+| `SwinV2_v3`     | WD14              |
+| `ConvNext_v3`   | WD14              |
+| `ViT_v3`        | WD14              |
+| `SwinV2`        | WD14              |
+| `ConvNext`      | WD14              |
+| `ConvNextV2`    | WD14              |
+| `ViT`           | WD14              |
+| `MOAT`          | WD14              |
+| `camie_initial` | Camie Tagger      |
+| `camie_v2`      | Camie Tagger      |
+| `mldanbooru`    | ML-Danbooru       |
+| `pixai`         | PixAI             |
 
 ### タグのカテゴリ分類
 
@@ -169,15 +169,14 @@ uv run python main.py --image-dir /path/to/eagle.library/images --force
 uv run python main.py --image-dir /path/to/eagle.library/images --log-file output.log
 ```
 
-| 引数 | 必須 | デフォルト | 説明 |
-|------|------|-----------|------|
-| `--image-dir` | Yes | - | Eagle ライブラリの images ディレクトリ |
-| `--model` | No | `EVA02_Large` | タグ生成モデル名 |
-| `--force` | No | `false` | 既処理スキップを無効化し全件再処理 |
-| `--log-file` | No | なし | ログ出力先ファイル |
+| 引数          | 必須 | デフォルト    | 説明                                   |
+| ------------- | ---- | ------------- | -------------------------------------- |
+| `--image-dir` | Yes  | -             | Eagle ライブラリの images ディレクトリ |
+| `--model`     | No   | `EVA02_Large` | タグ生成モデル名                       |
+| `--force`     | No   | `false`       | 既処理スキップを無効化し全件再処理     |
+| `--log-file`  | No   | なし          | ログ出力先ファイル                     |
 
 画像・GIF はサムネイルを PIL で生成、動画 (MP4 等) は ffmpeg で先頭フレームを抽出してサムネイルを生成し、そのサムネイルでタグ生成を行う。
-
 
 ## 小説テキスト処理 (`tag_palette.novel`)
 
@@ -202,27 +201,27 @@ python src/tag_palette/novel/ingest_local.py /path/to/novels --db /path/to/local
 
 ### モジュール構成
 
-| ファイル | 役割 |
-|---------|------|
-| `ingest_local.py` | 本番 DB へのインジェスト CLI |
-| `chunker.py` | テキストをセリフ・心情・地の文にチャンク分割 |
-| `morpheme.py` | MeCab (fugashi) による形態素解析 |
-| `embedding.py` | チャンク埋め込みベクトル生成・類似検索 |
-| `route.py` | 分岐ルート CRUD |
+| ファイル          | 役割                                         |
+| ----------------- | -------------------------------------------- |
+| `ingest_local.py` | 本番 DB へのインジェスト CLI                 |
+| `chunker.py`      | テキストをセリフ・心情・地の文にチャンク分割 |
+| `morpheme.py`     | MeCab (fugashi) による形態素解析             |
+| `embedding.py`    | チャンク埋め込みベクトル生成・類似検索       |
+| `route.py`        | 分岐ルート CRUD                              |
 
 ### DB テーブル (本番 ORM)
 
-| テーブル | 説明 |
-|---------|------|
-| `novels` | 小説メタデータ (id = Pixiv ID) |
-| `novel_labels` | ラベル (旧タグ) |
-| `novel_label_associations` | 小説↔ラベル関連 |
-| `novel_chunks` | チャンク (dialogue / thought / narrative) |
-| `novel_morphemes` | 形態素 (surface + pos) |
-| `novel_chunk_morphemes` | チャンク↔形態素 (出現回数) |
-| `chunk_embeddings` | チャンク埋め込みベクトル |
-| `routes` | 分岐ルート定義 |
-| `route_chunks` | ルート内チャンク |
+| テーブル                   | 説明                                      |
+| -------------------------- | ----------------------------------------- |
+| `novels`                   | 小説メタデータ (id = Pixiv ID)            |
+| `novel_labels`             | ラベル (旧タグ)                           |
+| `novel_label_associations` | 小説↔ラベル関連                           |
+| `novel_chunks`             | チャンク (dialogue / thought / narrative) |
+| `novel_morphemes`          | 形態素 (surface + pos)                    |
+| `novel_chunk_morphemes`    | チャンク↔形態素 (出現回数)                |
+| `chunk_embeddings`         | チャンク埋め込みベクトル                  |
+| `routes`                   | 分岐ルート定義                            |
+| `route_chunks`             | ルート内チャンク                          |
 
 ### Windows での実行
 
@@ -242,18 +241,18 @@ uv run python main.py --image-dir "D:\eagle.library\images"
 
 ## 依存ライブラリ
 
-| ライブラリ | 用途 |
-|-----------|------|
-| `pillow` | 画像読み込み・前処理 |
-| `numpy` | 数値演算・画像配列処理 |
-| `opencv-python-headless` | 画像リサイズ・パディング |
-| `onnxruntime` | ONNX モデル推論 |
-| `huggingface-hub` | モデルの自動ダウンロード |
-| `pandas` | CSV タグデータ処理 |
-| `googletrans` | Google 翻訳 API |
-| `python-dotenv` | .env ファイル読み込み |
-| `fugashi` + `unidic-lite` | MeCab 形態素解析 |
-| `sentence-transformers` | チャンク埋め込みベクトル生成 |
+| ライブラリ                | 用途                         |
+| ------------------------- | ---------------------------- |
+| `pillow`                  | 画像読み込み・前処理         |
+| `numpy`                   | 数値演算・画像配列処理       |
+| `opencv-python-headless`  | 画像リサイズ・パディング     |
+| `onnxruntime`             | ONNX モデル推論              |
+| `huggingface-hub`         | モデルの自動ダウンロード     |
+| `pandas`                  | CSV タグデータ処理           |
+| `googletrans`             | Google 翻訳 API              |
+| `python-dotenv`           | .env ファイル読み込み        |
+| `fugashi` + `unidic-lite` | MeCab 形態素解析             |
+| `sentence-transformers`   | チャンク埋め込みベクトル生成 |
 
 ## 開発
 
@@ -261,3 +260,5 @@ uv run python main.py --image-dir "D:\eagle.library\images"
 pip install -e ".[dev]"
 pytest
 ```
+
+uv run src/tag_palette/novel/ingest_local.py --files "D:\eagle.library\images\MN4CMP3YNFPKF.info\檻（おり）.pdf" --reingest
