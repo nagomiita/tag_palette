@@ -1,0 +1,57 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# IDE
+.idea/
+.vscode/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Sample images
+samples/*.png
+samples/*.jpg
+samples/*.jpeg
+samples/*.webp
+samples/*.bmp
+samples/*.gif
+
+app
+
+# 作業用一時ディレクトリ
+tmp_*/
+
+# 診断・プローブ出力
+diag_out.txt
+last_run.txt
+uv_probe.txt
+pdfs.txt
+images_check_ids.txt
+missing_tags.txt
+
+# 外部リポジトリ（独自 .git を持つ）
+ndlocr-lite/
+
+# 一回限りのバッチ／マイグレーションスクリプト
+dedupe_novels.py
+migrate_tag_embeddings.py
+reingest_novels.py
+relabel_novels.py
+fix_fullwidth_digits.py
+fix_pixiv_id_prefix.py
+fix_promo_bracket.py
+move_to_check.py

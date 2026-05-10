@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "WebFetch", "Task", "TodoWrite", "NotebookEdit"],
+    "defaultMode": "bypassPermissions",
+    "deny": []
+  },
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true
+  }
+}
